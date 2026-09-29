@@ -1,0 +1,36 @@
+# 真實使用資料
+data/
+uploads/
+deleted-classes/
+restored-classes/
+
+# 學生與教師真實資料
+students.json
+teachers.json
+settings.json
+
+# 備份
+*.before-*
+*.backup
+*.bak
+backups/
+scratch-update-backup-*/
+
+# Node
+node_modules/
+
+# Scratch GUI build
+html/official/
+
+# Release packages
+*.tar.gz
+*.sha256
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

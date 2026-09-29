@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Scratch 學生作品查看</title>
+
+<style>
+    html, body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: Arial, "Noto Sans TC", sans-serif;
+    }
+
+    #topbar {
+        height: 44px;
+        box-sizing: border-box;
+        background: #2f80ed;
+        color: white;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 14px;
+        font-size: 14px;
+    }
+
+    #title {
+        font-weight: bold;
+    }
+
+    #status {
+        margin-left: auto;
+    }
+
+    #scratch-frame {
+        width: 100%;
+        height: calc(100vh - 44px);
+        border: none;
+        display: block;
+    }
+</style>
+</head>
+
+<body>
+
+<div id="topbar">
+    <span id="title">學生作品查看</span>
+    <span id="project-info"></span>
+    <span id="status">載入中...</span>
+
+    <button
+        id="teacher-logout-button"
+        type="button"
+        onclick="logoutTeacher()"
+        style="
+            margin-left:10px;
+            cursor:pointer;
+        ">
+        教師登出
+    </button>
+</div>
+
+<iframe
+    id="scratch-frame"
+    src="/official/"
+></iframe>
+
+<script>
+    const params =
+        new URLSearchParams(window.location.search);
+
+    const studentId =
+        params.get('studentId') || '';
+
+    const projectId =
+        params.get('projectId') || '';
+
+    const projectName =
+        params.get('name') || '未命名作品';
+
+    let teacherToken =
+        localStorage.getItem('teacherToken') || '';
+
+    document.getElementById(
+        'project-info'
+    ).textContent =
+        `${studentId}｜${projectName}`;
+
+
+
+    async function logoutTeacher() {
+        const token = teacherToken;
+
+        localStorage.removeItem(
+            'teacherToken'
+        );
+
+        teacherToken = '';
+
+        if (token) {
+            try {
+                await fetch(
+                    `http://${window.location.hostname}:3000/teacher/logout`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization':
+                                `Bearer ${token}`
+                        }
+                    }
+                );
+            } catch (err) {
+                console.warn(
+                    '教師登出 API 呼叫失敗',
+                    err
+                );
+            }
+        }
+
+        document.getElementById(
+            'status'
+        ).textContent = '已登出';
+
+        alert(
+            '教師已登出。\n下次開啟作品時會重新要求輸入密碼。'
+        );
+    }
+
+
+    function waitForScratchBridge() {
+        return new Promise((resolve, reject) => {
+            const started = Date.now();
+
+            const timer = setInterval(() => {
+                const frame =
+                    document.getElementById(
+                        'scratch-frame'
+                    );
+
+                try {
+                    if (
+                        frame &&
+                        frame.contentWindow &&
+                        typeof frame.contentWindow
+                            .loadScratchProject === 'function'
+                    ) {
+                        clearInterval(timer);
+                        resolve(frame);
+                        return;
+                    }
+                } catch (err) {
+                    // iframe 尚未完成
+                }
+
+                if (
+                    Date.now() - started > 20000
+                ) {
+                    clearInterval(timer);
+                    reject(
+                        new Error(
+                            'Scratch 編輯器載入逾時'
+                        )
+                    );
+                }
+
+            }, 300);
+        });
+    }
+
+
+
+
+    function askTeacherPassword() {
+        return new Promise((resolve, reject) => {
+            const modal =
+                document.getElementById(
+                    'teacher-login-modal'
+                );
+
+            const input =
+                document.getElementById(
+                    'teacher-login-password'
+                );
+
+            const submit =
+                document.getElementById(
+                    'teacher-login-submit'
+                );
+
+            const cancel =
+                document.getElementById(
+                    'teacher-login-cancel'
+                );
+
+            modal.style.display = 'flex';
+            input.value = '';
+
+            setTimeout(() => {
+                input.focus();
+            }, 50);
+
+            const cleanup = () => {
+                submit.onclick = null;
+                cancel.onclick = null;
+                input.onkeydown = null;
+                modal.style.display = 'none';
+            };
+
+            const doSubmit = () => {
+                const password = input.value;
+
+                if (!password) {
+                    return;
+                }
+
+                cleanup();
+                resolve(password);
+            };
+
+            submit.onclick = doSubmit;
+
+            cancel.onclick = () => {
+                cleanup();
+                reject(
+                    new Error('尚未登入教師管理')
+                );
+            };
+
+            input.onkeydown = event => {
+                if (event.key === 'Enter') {
+                    doSubmit();
+                }
+
+                if (event.key === 'Escape') {
+                    cleanup();
+                    reject(
+                        new Error('尚未登入教師管理')
+                    );
+                }
+            };
+        });
+    }
+
+
+    async function ensureTeacherLogin(forceLogin = false) {
+        if (
+            teacherToken &&
+            !forceLogin
+        ) {
+            return;
+        }
+
+        const password =
+            await askTeacherPassword();
+
+        document.getElementById(
+            'status'
+        ).textContent = '教師登入中';
+
+        const res = await fetch(
+            `http://${window.location.hostname}:3000/teacher/login`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type':
+                        'application/json'
+                },
+                body: JSON.stringify({
+                    password
+                })
+            }
+        );
+
+        let data = {};
+
+        try {
+            data = await res.json();
+        } catch (err) {
+        }
+
+        if (
+            !res.ok ||
+            !data.token
+        ) {
+            throw new Error(
+                data.message ||
+                '教師密碼錯誤'
+            );
+        }
+
+        teacherToken = data.token;
+
+        localStorage.setItem(
+            'teacherToken',
+            teacherToken
+        );
+
+        document.getElementById(
+            'status'
+        ).textContent = '教師登入成功';
+    }
+
+
+    async function loadStudentProject() {
+        if (
+            !studentId ||
+            !projectId
+        ) {
+            throw new Error(
+                '缺少學生或作品資料'
+            );
+        }
+
+        await ensureTeacherLogin();
+
+        const res = await fetch(
+            `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/projects/${encodeURIComponent(projectId)}/file`,
+            {
+                headers: {
+                    'Authorization':
+                        `Bearer ${teacherToken}`
+                }
+            }
+        );
+
+        if (res.status === 401) {
+            localStorage.removeItem(
+                'teacherToken'
+            );
+
+            teacherToken = '';
+
+            await ensureTeacherLogin(true);
+
+            return loadStudentProject();
+        }
+
+        if (!res.ok) {
+            let message =
+                `HTTP ${res.status}`;
+
+            try {
+                const data =
+                    await res.json();
+
+                message =
+                    data.message || message;
+
+            } catch (err) {
+                // 非 JSON 回應
+            }
+
+            throw new Error(message);
+        }
+
+        const buffer =
+            await res.arrayBuffer();
+
+        const frame =
+            await waitForScratchBridge();
+
+        await frame.contentWindow
+            .loadScratchProject(
+                new Uint8Array(buffer)
+            );
+
+        document.getElementById(
+            'status'
+        ).textContent = '已載入';
+    }
+
+
+    window.addEventListener(
+        'load',
+        async () => {
+            try {
+                await loadStudentProject();
+            } catch (err) {
+                console.error(
+                    '[TEACHER VIEW]',
+                    err
+                );
+
+                document.getElementById(
+                    'status'
+                ).textContent = '載入失敗';
+
+                alert(
+                    `開啟學生作品失敗：${err.message}`
+                );
+            }
+        }
+    );
+</script>
+
+
+<div id="teacher-login-modal"
+     style="
+        display:none;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,0.45);
+        z-index:99999;
+        align-items:center;
+        justify-content:center;
+     ">
+
+    <div style="
+        width:min(360px,90vw);
+        background:white;
+        color:#222;
+        border-radius:12px;
+        padding:22px;
+        box-shadow:0 12px 40px rgba(0,0,0,0.3);
+    ">
+        <h3 style="margin-top:0;">
+            教師登入
+        </h3>
+
+        <p>
+            請輸入教師管理密碼
+        </p>
+
+        <input
+            id="teacher-login-password"
+            type="password"
+            autocomplete="current-password"
+            style="
+                width:100%;
+                box-sizing:border-box;
+                padding:10px;
+                font-size:16px;
+                margin-bottom:14px;
+            "
+        >
+
+        <div style="
+            display:flex;
+            justify-content:flex-end;
+            gap:8px;
+        ">
+            <button
+                id="teacher-login-cancel"
+                type="button">
+                取消
+            </button>
+
+            <button
+                id="teacher-login-submit"
+                type="button">
+                登入
+            </button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

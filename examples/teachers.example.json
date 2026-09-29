@@ -1,0 +1,18 @@
+[
+  {
+    "username": "admin",
+    "name": "系統管理者",
+    "role": "admin",
+    "managedClasses": ["*"],
+    "passwordHash": "$2b$10$EXAMPLE_ONLY_NOT_A_REAL_PASSWORD_HASH",
+    "active": true
+  },
+  {
+    "username": "teacher01",
+    "name": "測試教師",
+    "role": "teacher",
+    "managedClasses": ["TEST601"],
+    "passwordHash": "$2b$10$EXAMPLE_ONLY_NOT_A_REAL_PASSWORD_HASH",
+    "active": true
+  }
+]

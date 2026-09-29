@@ -1,0 +1,16 @@
+{
+  "name": "scratch-api",
+  "version": "1.0.0",
+  "description": "Scratch school server API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "multer": "^2.4.0"
+  }
+}

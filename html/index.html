@@ -1,0 +1,1175 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>學校 Scratch 雲端學習平台</title>
+    <style>
+        #school-bar {
+            background-color: #4c97ff;
+            color: white;
+            padding: 8px 15px;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #school-bar select, #school-bar input, #school-bar button {
+            padding: 5px 10px;
+            margin-left: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            font-size: 13px;
+        }
+        #school-bar button {
+            background-color: #ffbf00;
+            color: #333;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+        }
+        #school-bar button:hover {
+            background-color: #e6ac00;
+        }
+    
+        #project-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.35);
+            z-index: 99999;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #project-modal-box {
+            width: min(620px, 90vw);
+            max-height: 75vh;
+            overflow-y: auto;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+            font-family: Arial, sans-serif;
+        }
+
+        #project-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        #project-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .project-item {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .project-info {
+            flex: 1;
+        }
+
+        .project-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+
+        .project-time {
+            font-size: 12px;
+            color: #777;
+        }
+
+        .project-open-btn {
+            padding: 7px 14px;
+            cursor: pointer;
+        }
+
+</style>
+</head>
+<body style="margin:0; padding:0; overflow:hidden;">
+
+    <!-- 頂部學生登入與雲端儲存列 -->
+    <div id="school-bar">
+        <div>
+            <strong> <span id="sitePrefix">校內</span> Scratch 雲端平台</strong>
+            <span style="margin-left:15px;">學號/帳號：</span>
+            <input type="text" id="studentId" placeholder="例如: 10101" value="student01">
+            <input type="password" id="studentPassword"
+                   placeholder="密碼"
+                   autocomplete="current-password"
+                   style="width:120px;">
+            <button id="loginButton" onclick="loginUser()">登入</button>
+            <button id="logoutButton" onclick="logoutUser()" style="display:none;">登出</button>
+            <span id="login-status" style="margin-left:10px; color:#cce5ff;">(尚未登入)</span>
+        <button
+            id="changePasswordButton"
+            type="button"
+            onclick="changeStudentPassword()"
+            style="
+                display:none;
+                margin-left:10px;
+            "
+        >
+            修改密碼
+        </button>
+        <span
+            id="cloud-save-status"
+            style="
+                margin-left:22px;
+                color:#ffffff;
+                font-weight:600;
+            "
+        >尚未存檔</span>
+        </div>
+        <div>
+            <span>作品名稱：</span>
+            <input type="text" id="projectName" value="我的第一個作品">
+            <button onclick="saveProjectToServer()"> 儲存至雲端伺服器</button>
+                <button onclick="showMyProjects()">我的作品</button>
+        </div>
+    </div>
+
+    <!-- Scratch 編輯器主畫面 -->
+    
+    <div id="project-modal">
+        <div id="project-modal-box">
+            <div id="project-modal-header">
+                <strong>我的作品</strong>
+                <button onclick="closeProjectModal()">關閉</button>
+            </div>
+            <div id="project-list"></div>
+        </div>
+    </div>
+
+<iframe id="scratch-frame" src="/official/" style="width:100vw; height:calc(100vh - 45px); border:none;"></iframe>
+
+    <script>
+    let currentStudent = '';
+    let currentToken = '';
+
+    
+    function changeStudentPassword() {
+        if (!currentStudent || !currentToken) {
+            alert('請先登入');
+            return;
+        }
+
+        document.getElementById(
+            'currentPasswordInput'
+        ).value = '';
+
+        document.getElementById(
+            'newPasswordInput'
+        ).value = '';
+
+        document.getElementById(
+            'confirmPasswordInput'
+        ).value = '';
+
+        const showCheckbox =
+            document.getElementById(
+                'showStudentPasswordCheckbox'
+            );
+
+        if (showCheckbox) {
+            showCheckbox.checked = false;
+        }
+
+        [
+            'currentPasswordInput',
+            'newPasswordInput',
+            'confirmPasswordInput'
+        ].forEach(id => {
+            const input =
+                document.getElementById(id);
+
+            if (input) {
+                input.type = 'password';
+            }
+        });
+
+        document.getElementById(
+            'change-password-modal'
+        ).style.display = 'flex';
+
+        document.getElementById(
+            'currentPasswordInput'
+        ).focus();
+    }
+
+
+    function toggleStudentPasswordVisibility() {
+        const show =
+            document.getElementById(
+                'showStudentPasswordCheckbox'
+            ).checked;
+
+        [
+            'currentPasswordInput',
+            'newPasswordInput',
+            'confirmPasswordInput'
+        ].forEach(id => {
+            const input =
+                document.getElementById(id);
+
+            if (input) {
+                input.type =
+                    show ? 'text' : 'password';
+            }
+        });
+    }
+
+    function closeChangePasswordModal() {
+        const modal =
+            document.getElementById(
+                'change-password-modal'
+            );
+
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
+    async function submitStudentPasswordChange() {
+        const currentPassword =
+            document.getElementById(
+                'currentPasswordInput'
+            ).value;
+
+        const newPassword =
+            document.getElementById(
+                'newPasswordInput'
+            ).value;
+
+        const confirmPassword =
+            document.getElementById(
+                'confirmPasswordInput'
+            ).value;
+
+        if (!currentPassword) {
+            alert('請輸入目前密碼');
+            return;
+        }
+
+        if (newPassword.length < 4) {
+            alert('新密碼至少需要 4 個字元');
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            alert('兩次輸入的新密碼不一致');
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/auth/change-password`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type':
+                            'application/json',
+                        'Authorization':
+                            `Bearer ${currentToken}`
+                    },
+                    body: JSON.stringify({
+                        currentPassword,
+                        newPassword
+                    })
+                }
+            );
+
+            const data =
+                await readApiJson(res);
+
+            if (
+                !res.ok ||
+                data.status !== 'ok'
+            ) {
+                throw new Error(
+                    data.message ||
+                    `HTTP ${res.status}`
+                );
+            }
+
+            closeChangePasswordModal();
+
+            alert(
+                data.message ||
+                '密碼修改成功，請重新登入'
+            );
+
+            await logoutUser();
+
+        } catch (err) {
+            alert(
+                `修改密碼失敗：${err.message}`
+            );
+        }
+    }
+
+
+    let lastCloudSavedAt = null;
+    let hasUnsavedChanges = false;
+
+    function updateCloudSaveStatus() {
+        const el =
+            document.getElementById(
+                'cloud-save-status'
+            );
+
+        if (!el) {
+            return;
+        }
+
+        if (!lastCloudSavedAt) {
+            el.textContent = '尚未存檔';
+            el.style.color = '#ffffff';
+            return;
+        }
+
+        const timeText =
+            lastCloudSavedAt
+                .toLocaleTimeString(
+                    'zh-TW',
+                    {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: false
+                    }
+                );
+
+        if (hasUnsavedChanges) {
+            el.textContent =
+                `上次存檔：${timeText}｜ 有未儲存修改`;
+
+            el.style.color = '#fff3a3';
+        } else {
+            el.textContent =
+                `上次存檔：${timeText}`;
+
+            el.style.color = '#ffffff';
+        }
+    }
+
+    function resetCloudSaveStatus() {
+        lastCloudSavedAt = null;
+        hasUnsavedChanges = false;
+        updateCloudSaveStatus();
+    }
+
+    window.addEventListener(
+        'message',
+        event => {
+            if (
+                event.origin !==
+                window.location.origin
+            ) {
+                return;
+            }
+
+            if (
+                !event.data ||
+                event.data.type !==
+                    'SCRATCH_PROJECT_CHANGED'
+            ) {
+                return;
+            }
+
+            // 尚未真正按過雲端存檔時，
+            // 不顯示「未儲存修改」
+            if (!lastCloudSavedAt) {
+                return;
+            }
+
+            hasUnsavedChanges = true;
+            updateCloudSaveStatus();
+        }
+    );
+
+    async function loginUser() {
+        const sid =
+            document.getElementById('studentId').value.trim();
+
+        const password =
+            document.getElementById('studentPassword').value;
+
+        if (!sid || !password) {
+            alert('請輸入學號和密碼！');
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/auth/login`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        studentId: sid,
+                        password: password
+                    })
+                }
+            );
+
+            const data = await res.json();
+
+            if (!res.ok || data.status !== 'ok') {
+                throw new Error(
+                    data.message || `HTTP ${res.status}`
+                );
+            }
+
+            currentStudent = data.student.studentId;
+            currentToken = data.token;
+
+            const displayName =
+                data.student.name || currentStudent;
+
+            const status =
+                document.getElementById('login-status');
+
+            status.innerText =
+                `已登入：${displayName}（${currentStudent}）`;
+
+            status.style.color = '#79fe0c';
+
+            document.getElementById('studentId').value = '';
+        document.getElementById('studentPassword').value = '';
+
+            updateLoginButtons(true);
+
+            alert(
+                `登入成功！\n` +
+                `目前身分：${displayName}`
+            );
+
+        } catch (err) {
+            currentStudent = '';
+            currentToken = '';
+
+            const status =
+                document.getElementById('login-status');
+
+            status.innerText = '尚未登入';
+            status.style.color = '';
+
+            alert(`登入失敗：${err.message}`);
+        }
+    }
+
+async function saveProjectToServer() {
+        if (!currentStudent) {
+            alert('請先在左上方輸入學號並點擊「登入」！');
+            return;
+        }
+
+        const projName =
+            document.getElementById('projectName').value.trim() || 'project';
+
+        try {
+            const frame = document.getElementById('scratch-frame');
+
+            if (
+                !frame ||
+                !frame.contentWindow ||
+                typeof frame.contentWindow.getScratchProject !== 'function'
+            ) {
+                alert('Scratch 編輯器尚未準備完成，請稍後再試。');
+                return;
+            }
+
+            const sb3Blob =
+                await frame.contentWindow.getScratchProject();
+
+            console.log('[CLOUD] SB3 已取得', {
+                student: currentStudent,
+                project: projName,
+                size: sb3Blob.size
+            });
+
+            
+
+
+           const formData = new FormData();
+
+formData.append(
+    'file',
+    sb3Blob,
+    `${projName}.sb3`
+);
+
+formData.append('name', projName);
+
+            // 先查詢目前學生是否已有同名作品
+            const findRes = await fetch(
+                `http://${window.location.hostname}:3000/projects/name/find?name=${encodeURIComponent(projName)}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                }
+            );
+
+            const findData = await findRes.json();
+
+            if (!findRes.ok || findData.status !== 'ok') {
+                throw new Error(
+                    findData.message || '查詢同名作品失敗'
+                );
+            }
+
+            let saveUrl =
+                `http://${window.location.hostname}:3000/projects/upload`;
+
+            let finalName = projName;
+
+            if (findData.exists && findData.project) {
+                const action =
+                    await chooseSameNameAction(projName);
+
+                if (action === 'cancel') {
+                    return;
+                }
+
+                if (action === 'overwrite') {
+                    saveUrl =
+                        `http://${window.location.hostname}:3000/projects/overwrite/${findData.project.id}`;
+                }
+
+                if (action === 'new') {
+                    const newName = prompt(
+                        '請輸入新的作品名稱：',
+                        `${projName}-新作品`
+                    );
+
+                    if (newName === null) {
+                        return;
+                    }
+
+                    finalName = newName.trim();
+
+                    if (!finalName) {
+                        alert('作品名稱不能空白。');
+                        return;
+                    }
+
+                    if (finalName === projName) {
+                        alert('另存新作品時，請使用不同的作品名稱。');
+                        return;
+                    }
+
+                    formData.set(
+                        'file',
+                        sb3Blob,
+                        `${finalName}.sb3`
+                    );
+
+                    formData.set(
+                        'name',
+                        finalName
+                    );
+
+                    document.getElementById(
+                        'projectName'
+                    ).value = finalName;
+                }
+            }
+
+            const res = await fetch(
+                saveUrl,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    },
+                    body: formData
+                }
+            );
+
+            const data = await readApiJson(res);
+
+            if (!res.ok) {
+                throw new Error(
+                    data.message ||
+                    data.error ||
+                    `HTTP ${res.status}`
+                );
+            }
+
+           
+         if (['uploaded', 'overwritten'].includes(data.status)) {
+                    lastCloudSavedAt = new Date();
+                hasUnsavedChanges = false;
+                updateCloudSaveStatus();
+
+alert(
+        `儲存成功！作品【${finalName}】已上傳至伺服器。`
+    );
+} else {
+    throw new Error(
+        data.message || '伺服器未回傳成功狀態'
+    );
+}
+
+
+        } catch (err) {
+            console.error('[CLOUD] 上傳失敗', err);
+            alert(`上傳失敗：${err.message}`);
+        }
+    }
+
+    async function showMyProjects() {
+        if (!currentStudent) {
+            alert('請先登入學號！');
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/projects/list/all`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                }
+            );
+
+            const data = await readApiJson(res);
+
+            if (!res.ok || data.status !== 'ok') {
+                throw new Error(data.message || `HTTP ${res.status}`);
+            }
+
+            const projects = data.projects || [];
+
+            if (projects.length === 0) {
+                alert(`【${currentStudent}】目前還沒有雲端作品。`);
+                return;
+            }
+
+            renderProjectList(projects);
+
+            console.log('[CLOUD] 我的作品', projects);
+
+        } catch (err) {
+            console.error('[CLOUD] 讀取作品清單失敗', err);
+            alert(`讀取作品清單失敗：${err.message}`);
+        }
+    }
+
+
+    async function openProjectById(projectId, projectName) {
+        try {
+            const frame = document.getElementById('scratch-frame');
+
+            if (
+                !frame ||
+                !frame.contentWindow ||
+                typeof frame.contentWindow.loadScratchProject !== 'function'
+            ) {
+                throw new Error('Scratch 編輯器尚未準備完成');
+            }
+
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/projects/file/${projectId}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                }
+            );
+
+            if (!res.ok) {
+                throw new Error(`下載作品失敗 HTTP ${res.status}`);
+            }
+
+            const buffer = await res.arrayBuffer();
+
+            console.log('[CLOUD] 開始載入作品', {
+                id: projectId,
+                name: projectName,
+                size: buffer.byteLength
+            });
+
+            await frame.contentWindow.loadScratchProject(
+                new Uint8Array(buffer)
+            );
+
+            if (projectName) {
+                document.getElementById('projectName').value = projectName;
+            }
+
+            alert(`作品【${projectName || projectId}】已開啟。`);
+
+        } catch (err) {
+            console.error('[CLOUD] 開啟作品失敗', err);
+            alert(`開啟作品失敗：${err.message}`);
+        }
+    }
+
+
+    function closeProjectModal() {
+        document.getElementById('project-modal').style.display = 'none';
+    }
+
+    function renderProjectList(projects) {
+        const list = document.getElementById('project-list');
+        list.innerHTML = '';
+
+        projects.forEach(project => {
+            const item = document.createElement('div');
+            item.className = 'project-item';
+
+            const info = document.createElement('div');
+            info.className = 'project-info';
+
+            const name = document.createElement('div');
+            name.className = 'project-name';
+            name.textContent = project.name || '未命名作品';
+
+            const time = document.createElement('div');
+            time.className = 'project-time';
+            time.textContent = project.createdAt
+                ? new Date(project.createdAt).toLocaleString('zh-TW')
+                : '';
+
+            const buttonGroup = document.createElement('div');
+            buttonGroup.style.display = 'flex';
+            buttonGroup.style.gap = '8px';
+
+            const openButton = document.createElement('button');
+            openButton.className = 'project-open-btn';
+            openButton.textContent = '開啟';
+
+            openButton.onclick = async () => {
+                await openProjectById(
+                    project.id,
+                    project.name || '未命名作品'
+                );
+                closeProjectModal();
+            };
+
+            const deleteButton = document.createElement('button');
+            deleteButton.textContent = '刪除';
+
+            deleteButton.onclick = async () => {
+                await deleteProject(
+                    project.id,
+                    project.name || '未命名作品'
+                );
+            };
+
+            buttonGroup.appendChild(openButton);
+            buttonGroup.appendChild(deleteButton);
+
+            info.appendChild(name);
+            info.appendChild(time);
+
+            item.appendChild(info);
+            item.appendChild(buttonGroup);
+
+            list.appendChild(item);
+        });
+
+        document.getElementById('project-modal').style.display = 'flex';
+    }
+
+
+    async function deleteProject(projectId, projectName) {
+        const ok = confirm(
+            `確定要刪除作品【${projectName}】嗎？\n\n刪除後無法復原。`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/projects/file/${projectId}`,
+                {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                }
+            );
+
+            const data = await readApiJson(res);
+
+            if (!res.ok || data.status !== 'deleted') {
+                throw new Error(
+                    data.message || `HTTP ${res.status}`
+                );
+            }
+
+            alert(`作品【${projectName}】已刪除。`);
+
+            closeProjectModal();
+
+            // 重新讀取作品清單
+            await showMyProjects();
+
+        } catch (err) {
+            console.error('[CLOUD] 刪除作品失敗', err);
+            alert(`刪除作品失敗：${err.message}`);
+        }
+    }
+
+
+    function chooseSameNameAction(projectName) {
+        return new Promise(resolve => {
+            const overlay = document.createElement('div');
+
+            Object.assign(overlay.style, {
+                position: 'fixed',
+                inset: '0',
+                background: 'rgba(0,0,0,0.35)',
+                zIndex: '100000',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+            });
+
+            const box = document.createElement('div');
+
+            Object.assign(box.style, {
+                background: 'white',
+                borderRadius: '12px',
+                padding: '22px',
+                width: 'min(430px, 88vw)',
+                boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+                fontFamily: 'Arial, sans-serif'
+            });
+
+            const title = document.createElement('div');
+            title.style.fontWeight = 'bold';
+            title.style.fontSize = '18px';
+            title.style.marginBottom = '12px';
+            title.textContent = '已有同名作品';
+
+            const message = document.createElement('div');
+            message.style.marginBottom = '20px';
+            message.textContent =
+                `作品「${projectName}」已經存在，您要怎麼儲存？`;
+
+            const buttons = document.createElement('div');
+
+            Object.assign(buttons.style, {
+                display: 'flex',
+                gap: '8px',
+                justifyContent: 'flex-end',
+                flexWrap: 'wrap'
+            });
+
+            function makeButton(text, value) {
+                const btn = document.createElement('button');
+                btn.textContent = text;
+                btn.style.padding = '8px 14px';
+
+                btn.onclick = () => {
+                    overlay.remove();
+                    resolve(value);
+                };
+
+                return btn;
+            }
+
+            buttons.appendChild(
+                makeButton('覆蓋原作品', 'overwrite')
+            );
+
+            buttons.appendChild(
+                makeButton('另存新作品', 'new')
+            );
+
+            buttons.appendChild(
+                makeButton('取消', 'cancel')
+            );
+
+            box.appendChild(title);
+            box.appendChild(message);
+            box.appendChild(buttons);
+            overlay.appendChild(box);
+
+            document.body.appendChild(overlay);
+        });
+    }
+
+
+    async function logoutUser() {
+        const tokenToLogout = currentToken;
+
+        try {
+            if (tokenToLogout) {
+                await fetch(
+                    `http://${window.location.hostname}:3000/auth/logout`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${tokenToLogout}`
+                        }
+                    }
+                );
+            }
+        } catch (err) {
+            console.warn('[AUTH] 後端登出失敗', err);
+        }
+
+        currentStudent = '';
+        currentToken = '';
+
+        const status =
+            document.getElementById('login-status');
+
+        status.innerText = '（尚未登入）';
+        status.style.color = '#cce5ff';
+
+        document.getElementById('studentPassword').value = '';
+
+        const scratchFrame =
+            document.getElementById(
+                'scratch-frame'
+            );
+
+        if (scratchFrame) {
+            scratchFrame.src = '/official/';
+        }
+
+
+        updateLoginButtons(false);
+
+        alert('已登出。');
+    }
+
+
+    function updateLoginButtons(isLoggedIn) {
+    const changePasswordButton =
+        document.getElementById(
+            'changePasswordButton'
+        );
+
+    if (changePasswordButton) {
+        changePasswordButton.style.display =
+            isLoggedIn ? '' : 'none';
+    }
+
+        document.getElementById('loginButton').style.display =
+            isLoggedIn ? 'none' : '';
+
+        document.getElementById('logoutButton').style.display =
+            isLoggedIn ? '' : 'none';
+
+        document.getElementById('studentPassword').style.display =
+            isLoggedIn ? 'none' : '';
+    }
+
+
+    async function checkLoginToken() {
+        if (!currentToken) {
+            console.log('[AUTH] 沒有 token');
+            return false;
+        }
+
+        try {
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/auth/me`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                }
+            );
+
+            const data = await readApiJson(res);
+
+            console.log('[AUTH] token check', data);
+
+            return res.ok && data.status === 'ok';
+
+        } catch (err) {
+            console.error('[AUTH] token check failed', err);
+            return false;
+        }
+    }
+
+
+    function handleAuthExpired(message) {
+        currentStudent = '';
+        currentToken = '';
+
+        const status =
+            document.getElementById('login-status');
+
+        status.innerText = '（尚未登入）';
+        status.style.color = '#cce5ff';
+
+        document.getElementById('studentPassword').value = '';
+
+        updateLoginButtons(false);
+
+        alert(message || '登入已逾時，請重新登入。');
+    }
+
+
+    async function readApiJson(res) {
+        let data = {};
+
+        try {
+            data = await res.json();
+        } catch (err) {
+            data = {};
+        }
+
+        if (res.status === 401) {
+            handleAuthExpired(
+                data.message || '登入已逾時，請重新登入。'
+            );
+
+            throw new Error(
+                data.message || '登入已逾時'
+            );
+        }
+
+        return data;
+    }
+
+
+async function loadSiteSettings() {
+    try {
+        const res = await fetch(
+            `http://${window.location.hostname}:3000/settings`
+        );
+
+        const data =
+            await res.json();
+
+        if (
+            data.status === 'ok' &&
+            data.settings
+        ) {
+            const el =
+                document.getElementById(
+                    'sitePrefix'
+                );
+
+            if (el) {
+                el.textContent =
+                    data.settings.sitePrefix ||
+                    '校內';
+            }
+        }
+
+    } catch (err) {
+        console.warn(
+            '讀取網站設定失敗',
+            err
+        );
+    }
+}
+
+loadSiteSettings();
+
+</script>
+
+<div
+    id="change-password-modal"
+    style="
+        display:none;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,0.45);
+        z-index:9999;
+        align-items:center;
+        justify-content:center;
+    "
+>
+    <div
+        style="
+            width:360px;
+            max-width:90vw;
+            background:#fff;
+            border-radius:12px;
+            padding:22px;
+            box-shadow:0 10px 30px rgba(0,0,0,0.25);
+        "
+    >
+        <h3 style="margin-top:0;">修改密碼</h3>
+
+        <div style="margin-bottom:12px;">
+            <input
+                id="currentPasswordInput"
+                type="password"
+                placeholder="目前密碼"
+                style="width:100%;box-sizing:border-box;padding:10px;"
+            >
+        </div>
+
+        <div style="margin-bottom:12px;">
+            <input
+                id="newPasswordInput"
+                type="password"
+                placeholder="新密碼（至少 4 個字元）"
+                style="width:100%;box-sizing:border-box;padding:10px;"
+            >
+        </div>
+
+        <div style="margin-bottom:16px;">
+            <input
+                id="confirmPasswordInput"
+                type="password"
+                placeholder="再次輸入新密碼"
+                style="width:100%;box-sizing:border-box;padding:10px;"
+            >
+        </div>
+
+        <label
+            style="
+                display:block;
+                margin-bottom:16px;
+                font-size:14px;
+            "
+        >
+            <input
+                type="checkbox"
+                id="showStudentPasswordCheckbox"
+                onchange="toggleStudentPasswordVisibility()"
+            >
+            顯示密碼
+        </label>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+            <button
+                type="button"
+                onclick="closeChangePasswordModal()"
+            >
+                取消
+            </button>
+
+            <button
+                type="button"
+                onclick="submitStudentPasswordChange()"
+            >
+                確認修改
+            </button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

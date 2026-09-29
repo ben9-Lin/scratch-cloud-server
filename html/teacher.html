@@ -1,0 +1,4334 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scratch 教師管理</title>
+
+    <style>
+        body {
+            font-family: Arial, "Noto Sans TC", sans-serif;
+            background: #f5f7fb;
+            margin: 0;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+        }
+
+        h1, h2 {
+            margin-top: 0;
+        }
+
+        input {
+            padding: 8px 10px;
+            margin: 4px;
+        }
+
+        button {
+            padding: 8px 14px;
+            margin: 4px;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        th {
+            background: #f0f3f8;
+        }
+
+        #status {
+            margin-left: 10px;
+            font-weight: bold;
+        }
+
+        .student-id {
+            font-family: monospace;
+        }
+    
+        #teacher-project-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 99999;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #teacher-project-modal-box {
+            width: min(650px, 90vw);
+            max-height: 75vh;
+            overflow-y: auto;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+        }
+
+        #teacher-project-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        #teacher-project-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .teacher-project-item {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        .teacher-project-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .teacher-project-time {
+            font-size: 12px;
+            color: #777;
+        }
+
+
+        .teacher-project-meta {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+            line-height: 1.6;
+        }
+
+        .teacher-project-actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+        }
+
+
+    #teacher-current-user {
+        display: none;
+        margin-left: 12px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: #1f5fa8;
+        color: white;
+        font-weight: bold;
+        font-size: 14px;
+    }
+
+
+    /* 尚未登入時，只保留第一張教師登入卡 */
+    .container > .card:not(:first-of-type) {
+        display: none;
+    }
+
+    /* 教師登入成功後，才顯示其餘管理功能 */
+    body.teacher-logged-in .container > .card:not(:first-of-type) {
+        display: block;
+    }
+
+
+    .class-row-inactive {
+        background: #f2f2f2;
+    }
+
+    .class-row-inactive td:not(:last-child) {
+        color: #777 !important;
+        opacity: 0.72;
+    }
+
+
+/* 需要教師登入才能看見 */
+body:not(.teacher-logged-in) .teacher-protected {
+    display: none !important;
+}
+
+body.teacher-logged-in .teacher-protected {
+    display: block;
+}
+
+</style>
+</head>
+
+<body>
+<script>
+    document.body.classList.remove('teacher-logged-in');
+
+    
+async function editTeacherAccount(teacher) {
+    if (!teacher) {
+        return;
+    }
+
+    document.getElementById(
+        'editTeacherUsername'
+    ).value = teacher.username || '';
+
+    document.getElementById(
+        'editTeacherUsernameDisplay'
+    ).value = teacher.username || '';
+
+    document.getElementById(
+        'editTeacherName'
+    ).value = teacher.name || '';
+
+    document.getElementById(
+        'editTeacherRole'
+    ).value = teacher.role || 'teacher';
+
+    document.getElementById(
+        'editTeacherClasses'
+    ).value =
+        teacher.role === 'admin'
+            ? '全校'
+            : (
+                Array.isArray(
+                    teacher.managedClasses
+                )
+                    ? teacher.managedClasses.join(',')
+                    : ''
+            );
+
+    document.getElementById(
+        'editTeacherPassword'
+    ).value = '';
+
+    const showPassword =
+        document.getElementById(
+            'showEditTeacherPassword'
+        );
+
+    if (showPassword) {
+        showPassword.checked = false;
+    }
+
+    document.getElementById(
+        'editTeacherPassword'
+    ).type = 'password';
+
+    document.getElementById(
+        'teacher-edit-modal'
+    ).style.display = 'flex';
+
+    document.getElementById(
+        'editTeacherName'
+    ).focus();
+}
+
+function closeTeacherEditModal() {
+    const modal =
+        document.getElementById(
+            'teacher-edit-modal'
+        );
+
+    if (modal) {
+        modal.style.display = 'none';
+    }
+}
+
+function toggleEditTeacherPassword() {
+    const input =
+        document.getElementById(
+            'editTeacherPassword'
+        );
+
+    const show =
+        document.getElementById(
+            'showEditTeacherPassword'
+        ).checked;
+
+    if (input) {
+        input.type =
+            show ? 'text' : 'password';
+    }
+}
+
+async function submitTeacherEdit() {
+    const username =
+        document.getElementById(
+            'editTeacherUsername'
+        ).value.trim();
+
+    const name =
+        document.getElementById(
+            'editTeacherName'
+        ).value.trim();
+
+    const role =
+        document.getElementById(
+            'editTeacherRole'
+        ).value;
+
+    const classText =
+        document.getElementById(
+            'editTeacherClasses'
+        ).value.trim();
+
+    const password =
+        document.getElementById(
+            'editTeacherPassword'
+        ).value;
+
+    if (!username) {
+        alert('找不到教師帳號');
+        return;
+    }
+
+    if (!name) {
+        alert('請輸入教師姓名');
+        return;
+    }
+
+    let managedClasses = [];
+
+    if (role === 'admin') {
+        managedClasses = ['*'];
+    } else {
+        managedClasses =
+            classText
+                .split(/[,\s，、]+/)
+                .map(item => item.trim())
+                .filter(Boolean);
+
+        if (!managedClasses.length) {
+            alert('請至少指定一個管理班級');
+            return;
+        }
+    }
+
+    const body = {
+        name,
+        role,
+        managedClasses
+    };
+
+    if (password) {
+        body.password = password;
+    }
+
+    try {
+        const data =
+            await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/accounts/${encodeURIComponent(username)}`,
+                {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+                    body: JSON.stringify(
+                        body
+                    )
+                }
+            );
+
+        closeTeacherEditModal();
+
+        alert(
+            `教師 ${username} 已更新`
+        );
+
+        await loadTeacherAccounts();
+
+    } catch (err) {
+        alert(
+            `修改教師失敗：${err.message}`
+        );
+    }
+}
+
+async function toggleTeacherAccount(teacher) {
+        const nextActive =
+            teacher.active === false;
+
+        const actionText =
+            nextActive
+                ? '啟用'
+                : '停用';
+
+        const ok = confirm(
+            `確定要${actionText}教師帳號 ${teacher.username} 嗎？`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/accounts/${encodeURIComponent(teacher.username)}`,
+                {
+                    method: 'PUT',
+
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+
+                    body:
+                        JSON.stringify({
+                            active:
+                                nextActive
+                        })
+                }
+            );
+
+            alert(
+                `教師 ${teacher.username} 已${actionText}`
+            );
+
+            await loadTeacherAccounts();
+
+        } catch (err) {
+            alert(
+                `${actionText}教師失敗：${err.message}`
+            );
+        }
+    }
+
+
+</script>
+
+<div class="container">
+
+    <div class="card">
+        <h1>Scratch 教師管理</h1>
+
+        <input
+            id="teacherUsername"
+            placeholder="教師帳號，例如 dashen"
+            autocomplete="username"
+            style="margin-right:8px;"
+        >
+
+        <input
+            id="teacherPassword"
+            type="password"
+            placeholder="教師管理密碼"
+        >
+
+        <button id="teacherLoginButton" onclick="loadStudents()">
+            登入 / 重新整理
+        </button>
+
+        <button id="teacherLogoutButton" onclick="teacherLogout()" style="display:none;">
+            登出
+        </button>
+
+        <span id="teacher-current-user"></span>
+        <span id="status">尚未登入</span>
+    </div>
+
+
+    
+
+
+
+    
+
+    
+
+</div>
+
+
+
+<div
+    id="system-status-card"
+    class="card"
+    style="
+        display:none;
+        max-width:900px;
+        margin:20px auto;
+    "
+>
+    <h2>系統狀態</h2>
+
+    <div
+        id="system-status-content"
+        style="
+            line-height:2;
+            font-size:16px;
+        "
+    >
+        讀取中
+    </div>
+
+    <button
+        type="button"
+        onclick="loadSystemStatus()"
+        style="margin-top:12px;"
+    >
+        重新整理
+    </button>
+</div>
+
+<div
+    id="teacher-account-card"
+    class="card"
+    style="
+        display:none;
+        max-width:900px;
+        margin:20px auto;
+    "
+>
+    <h2>教師帳號管理</h2>
+
+    <div style="
+        display:flex;
+        flex-wrap:wrap;
+        gap:8px;
+        align-items:center;
+        margin-bottom:18px;
+    ">
+        <input
+            id="newTeacherUsername"
+            placeholder="教師帳號，例如 wang"
+        >
+
+        <input
+            id="newTeacherName"
+            placeholder="教師姓名"
+        >
+
+        <input
+            id="newTeacherPassword"
+            type="password"
+            placeholder="初始密碼"
+            autocomplete="new-password"
+        >
+
+        <select
+            id="newTeacherRole"
+            style="padding:8px;"
+        >
+            <option value="teacher">
+                教師
+            </option>
+
+            <option value="admin">
+                管理者
+            </option>
+        </select>
+
+        <input
+            id="newTeacherClasses"
+            placeholder="班級，例如 601,602,603"
+            style="min-width:220px;"
+        >
+
+        <button
+            type="button"
+            onclick="createTeacherAccount()"
+        >
+            新增教師
+        </button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>教師帳號</th>
+                <th>姓名</th>
+                <th>角色</th>
+                <th>可管理班級</th>
+                <th>狀態</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody id="teacher-account-table-body">
+        </tbody>
+    </table>
+</div>
+
+<div
+    id="admin-class-card"
+    class="card"
+    style="
+        display:none;
+        max-width:900px;
+        margin:20px auto;
+    "
+>
+    <h2>全校班級管理</h2>
+
+    <p style="color:#666;">
+        僅管理員可查看與刪除班級。
+        刪除後學生作品會先移到備份區，不會直接永久刪除。
+    </p>
+
+    <button
+        type="button"
+        onclick="loadAdminClasses()"
+        style="margin-bottom:12px;"
+    >
+        重新整理班級
+    </button>
+
+    <table>
+        <thead>
+            <tr>
+                <th>班級</th>
+                <th>學生數</th>
+                <th>啟用</th>
+                <th>停用</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody id="admin-class-table-body">
+        </tbody>
+    </table>
+</div>
+
+<div
+    id="deleted-class-card"
+    class="card"
+    style="
+        display:none;
+        max-width:900px;
+        margin:20px auto;
+    "
+>
+    <h2>已刪除班級</h2>
+
+    <p style="color:#666;">
+        僅管理員可查看與還原。
+    </p>
+
+    <button
+        type="button"
+        onclick="loadDeletedClasses()"
+        style="margin-bottom:12px;"
+    >
+        重新整理
+    </button>
+
+    <table>
+        <thead>
+            <tr>
+                <th>班級</th>
+                <th>學生數</th>
+                <th>備份資料夾</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+
+        <tbody id="deleted-class-table-body">
+        </tbody>
+    </table>
+</div>
+
+<div class="card teacher-protected" id="student-edit-card">
+        <h2>新增 / 更新學生</h2>
+
+        <input
+            id="studentId"
+            placeholder="學號"
+        >
+
+        <input
+            id="studentName"
+            placeholder="姓名"
+        >
+
+        <input
+            id="studentClass"
+            placeholder="班級，例如 105"
+        >
+
+        <input
+            id="studentSeatNo"
+            placeholder="座號，例如 01"
+            style="width:110px;"
+        >
+
+        <input
+            id="studentPassword"
+            type="password"
+            placeholder="新密碼"
+        >
+
+        <button onclick="saveStudent()">
+            儲存學生
+        </button>
+
+        <p>
+            已存在學號：更新姓名；如果有輸入新密碼，會同時重設密碼。
+        </p>
+    </div>
+
+<div class="card teacher-protected">
+        <h2>大量匯入學生</h2>
+
+        <p>
+            CSV 格式： studentId,name,className,seatNo,password
+        </p>
+
+        <input
+            id="studentCsvFile"
+            type="file"
+            accept=".csv,text/csv"
+        >
+
+        <button onclick="importStudentsCsv()">
+            匯入 CSV
+        </button>
+
+        <button onclick="downloadCsvTemplate()">
+            下載範例 CSV
+        </button>
+
+        <button onclick="exportCurrentStudentsCsv()">
+            匯出目前學生名單
+        </button>
+
+        <div
+            id="importResult"
+            style="margin-top:12px;"
+        ></div>
+
+        <hr style="margin:20px 0;">
+
+        <h3>快速建立整班帳號</h3>
+
+        <input
+            id="generateClassName"
+            placeholder="班級，例如 105"
+            style="width:120px;"
+        >
+
+        <input
+            id="generateStudentCount"
+            type="number"
+            min="1"
+            max="60"
+            value="30"
+            placeholder="人數"
+            style="width:90px;"
+        >
+
+        <button onclick="generateClassCsv()">
+            產生班級 CSV
+        </button>
+
+        <button onclick="createClassAccounts()">
+            直接建立整班帳號
+        </button>
+
+        <button onclick="resetClassPasswords()">
+            整班重設預設密碼
+        </button>
+
+        <button onclick="setClassActive(false)">
+            整班停用
+        </button>
+
+        <button onclick="setClassActive(true)">
+            整班啟用
+        </button>
+
+        <button onclick="showClassProjectSummary()">
+            班級作品總覽
+        </button>
+
+        <p style="font-size:13px;color:#666;">
+            規則：帳號＝班級＋兩位數座號；初始密碼＝帳號。
+            下載後可在 Excel / LibreOffice 補上姓名再匯入。
+        </p>
+    </div>
+
+<div class="card teacher-protected">
+        <h2>學生帳號</h2>
+
+        <div id="studentCount"></div>
+
+        <div style="margin:12px 0;">
+            <input
+                id="studentSearch"
+                placeholder="搜尋學號或姓名"
+                oninput="applyStudentFilter()"
+            >
+
+            <select
+                id="studentClassFilter"
+                onchange="applyStudentFilter()"
+            >
+                <option value="all">全部班級</option>
+            </select>
+
+            <select
+                id="studentStatusFilter"
+                onchange="applyStudentFilter()"
+            >
+                <option value="all">全部</option>
+                <option value="active">啟用中</option>
+                <option value="inactive">已停用</option>
+            </select>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>班級</th>
+                    <th>座號</th>
+                    <th>學號</th>
+                    <th>姓名</th>
+                    <th>狀態</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+
+            <tbody id="studentTable">
+            </tbody>
+        </table>
+    </div>
+
+
+
+
+
+
+
+
+
+
+
+
+<div
+    id="site-settings-card"
+    class="card"
+    style="
+        display:none;
+        max-width:900px;
+        margin:20px auto;
+    "
+>
+    <h2>系統顯示設定</h2>
+
+    <div style="
+        display:flex;
+        flex-wrap:wrap;
+        gap:10px;
+        align-items:center;
+    ">
+        <label for="sitePrefixInput">
+            平台名稱前綴：
+        </label>
+
+        <input
+            id="sitePrefixInput"
+            type="text"
+            maxlength="30"
+            placeholder="例如：範例國小"
+            style="min-width:220px;"
+        >
+
+        <button
+            type="button"
+            onclick="saveSiteSettings()"
+        >
+            儲存設定
+        </button>
+    </div>
+
+    <p style="margin-top:12px;">
+        預覽：
+        <strong id="sitePrefixPreview">
+            校內 Scratch 雲端平台
+        </strong>
+    </p>
+</div>
+
+
+<div
+    id="change-own-password-card"
+    class="card"
+    style="
+        display:none;
+        max-width:900px;
+        margin:20px auto;
+    "
+>
+    <h2>修改我的密碼</h2>
+
+    <input
+        id="currentTeacherPassword"
+        type="password"
+        placeholder="目前密碼"
+        autocomplete="current-password"
+    >
+
+    <input
+        id="newTeacherPasswordSelf"
+        type="password"
+        placeholder="新密碼（至少 8 個字元）"
+        autocomplete="new-password"
+    >
+
+    <input
+        id="confirmTeacherPasswordSelf"
+        type="password"
+        placeholder="再次輸入新密碼"
+        autocomplete="new-password"
+    >
+
+    <button
+        type="button"
+        onclick="changeOwnTeacherPassword()"
+    >
+        修改密碼
+    </button>
+</div>
+
+
+
+
+<script>
+    let teacherToken = '';
+    let allStudents = [];
+    let currentClassProjectSummary = null;
+
+    async function apiFetch(url, options = {}) {
+        options.headers = options.headers || {};
+
+        if (teacherToken) {
+            options.headers['Authorization'] =
+                `Bearer ${teacherToken}`;
+        }
+
+        const res = await fetch(url, options);
+
+        let data = {};
+
+        try {
+            data = await res.json();
+        } catch (err) {
+            throw new Error(
+                `伺服器回應格式錯誤 HTTP ${res.status}`
+            );
+        }
+
+        if (res.status === 401) {
+            teacherToken = '';
+
+            document.getElementById(
+                'status'
+            ).textContent = '尚未登入';
+
+            document.getElementById(
+                'teacherPassword'
+            ).style.display = '';
+
+            document.getElementById(
+                'studentTable'
+            ).innerHTML = '';
+
+            document.getElementById(
+                'studentCount'
+            ).textContent = '';
+
+            throw new Error(
+                data.message || '教師登入已失效，請重新登入'
+            );
+        }
+
+        if (!res.ok || data.status !== 'ok') {
+            throw new Error(
+                data.message || `HTTP ${res.status}`
+            );
+        }
+
+        return data;
+    }
+
+
+    async function loadStudents() {
+        try {
+            if (!teacherToken) {
+                const username =
+                    document.getElementById(
+                        'teacherUsername'
+                    ).value.trim();
+
+                const password =
+                    document.getElementById(
+                        'teacherPassword'
+                    ).value;
+
+                if (!password) {
+                    alert('請輸入教師管理密碼');
+                    return;
+                }
+
+                const loginRes = await fetch(
+                    `http://${window.location.hostname}:3000/teacher/login`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+                        body: JSON.stringify({
+                        username,
+                        password
+                    })
+                    }
+                );
+
+                const loginData =
+                    await loginRes.json();
+
+                if (
+                    !loginRes.ok ||
+                    loginData.status !== 'ok'
+                ) {
+                    throw new Error(
+                        loginData.message ||
+                        `HTTP ${loginRes.status}`
+                    );
+                }
+
+                teacherToken = loginData.token;
+                localStorage.setItem(
+                    'teacherToken',
+                    teacherToken
+                );
+
+                if (loginData.teacher) {
+                    localStorage.setItem(
+                        'teacherInfo',
+                        JSON.stringify(
+                            loginData.teacher
+                        )
+                    );
+
+                    const userBadge =
+                        document.getElementById(
+                            'teacher-current-user'
+                        );
+
+                    userBadge.textContent =
+                        loginData.teacher.username ||
+                        loginData.teacher.name ||
+                        '';
+
+                    userBadge.style.display =
+                        'inline-block';
+                }
+
+                document.getElementById(
+                    'teacherPassword'
+                ).value = '';
+
+                document.getElementById(
+                    'teacherUsername'
+                ).style.display = 'none';
+
+                document.getElementById(
+                    'teacherPassword'
+                ).style.display = 'none';
+            }
+
+            const data = await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/students`
+            );
+
+            document.getElementById(
+                'status'
+            ).textContent = '已登入';
+
+            updateTeacherLoginUI(true);
+
+            allStudents = data.students || [];
+
+        await refreshCurrentTeacherInfo();
+            updateClassFilter();
+            applyStudentFilter();
+
+        } catch (err) {
+            teacherToken = '';
+
+            document.getElementById(
+                'teacherPassword'
+            ).style.display = '';
+
+            document.getElementById(
+                'status'
+            ).textContent = '登入失敗';
+
+            alert(
+                `讀取學生清單失敗：${err.message}`
+            );
+        }
+    }
+
+
+function renderStudents(students) {
+        const tbody =
+            document.getElementById(
+                'studentTable'
+            );
+
+        tbody.innerHTML = '';
+
+        students.forEach(student => {
+            const tr =
+                document.createElement('tr');
+
+        if (student.active === false) {
+            tr.classList.add(
+                'class-row-inactive'
+            );
+        }
+
+
+            const classTd =
+                document.createElement('td');
+
+            classTd.textContent =
+                student.className || '';
+
+            const seatTd =
+                document.createElement('td');
+
+            seatTd.textContent =
+                student.seatNo || '';
+
+            const idTd =
+                document.createElement('td');
+
+            idTd.className = 'student-id';
+            idTd.textContent =
+                student.studentId;
+
+            const nameTd =
+                document.createElement('td');
+
+            nameTd.textContent =
+                student.name || '';
+
+            const statusTd =
+                document.createElement('td');
+
+            const isActive =
+                student.active !== false;
+
+            statusTd.textContent =
+                isActive ? '啟用中' : '已停用';
+
+            const actionTd =
+                document.createElement('td');
+
+            const editButton =
+                document.createElement('button');
+
+            editButton.textContent = '編輯';
+
+            editButton.onclick = () => {
+                document.getElementById(
+                    'studentId'
+                ).value =
+                    student.studentId;
+
+                document.getElementById(
+                    'studentName'
+                ).value =
+                    student.name || '';
+
+                document.getElementById(
+                    'studentClass'
+                ).value =
+                    student.className || '';
+
+                document.getElementById(
+                    'studentSeatNo'
+                ).value =
+                    student.seatNo || '';
+
+                document.getElementById(
+                    'studentPassword'
+                ).value = '';
+
+                document
+                    .getElementById(
+                        'student-edit-card'
+                    )
+                    ?.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+            };
+
+            const activeButton =
+                document.createElement('button');
+
+            activeButton.textContent =
+                isActive ? '停用' : '啟用';
+
+            activeButton.onclick = async () => {
+                await setStudentActive(
+                    student.studentId,
+                    !isActive
+                );
+            };
+
+            const projectButton =
+                document.createElement('button');
+
+            projectButton.textContent = '作品';
+
+            projectButton.onclick = async () => {
+                await showStudentProjects(
+                    student.studentId,
+                    student.name || ''
+                );
+            };
+
+            actionTd.appendChild(
+                editButton
+            );
+
+            actionTd.appendChild(
+                projectButton
+            );
+
+            actionTd.appendChild(
+                activeButton
+            );
+
+            tr.appendChild(classTd);
+            tr.appendChild(seatTd);
+            tr.appendChild(idTd);
+            tr.appendChild(nameTd);
+            tr.appendChild(statusTd);
+            tr.appendChild(actionTd);
+
+            tbody.appendChild(tr);
+        });
+    }
+
+
+    async function saveStudent() {
+        if (!teacherToken) {
+            alert('請先輸入教師管理密碼並登入');
+            return;
+        }
+
+        const studentId =
+            document.getElementById(
+                'studentId'
+            ).value.trim();
+
+        const name =
+            document.getElementById(
+                'studentName'
+            ).value.trim();
+
+        const className =
+            document.getElementById(
+                'studentClass'
+            ).value.trim();
+
+        const seatNo =
+            document.getElementById(
+                'studentSeatNo'
+            ).value.trim();
+
+        const password =
+            document.getElementById(
+                'studentPassword'
+            ).value;
+
+        if (!studentId) {
+            alert('請輸入學號');
+            return;
+        }
+
+        try {
+            const data = await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/students`,
+                {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+
+                    body: JSON.stringify({
+                        studentId,
+                        name,
+                        className,
+                        seatNo,
+                        password
+                    })
+                }
+            );
+
+            alert(
+                `學生【${data.student.studentId}】已儲存`
+            );
+
+            document.getElementById(
+                'studentPassword'
+            ).value = '';
+
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `儲存學生失敗：${err.message}`
+            );
+        }
+    }
+
+    async function teacherLogout() {
+        const token = teacherToken;
+
+        try {
+            if (token) {
+                await fetch(
+                    `http://${window.location.hostname}:3000/teacher/logout`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Authorization':
+                                `Bearer ${token}`
+                        }
+                    }
+                );
+            }
+        } catch (err) {
+            console.warn(
+                '[TEACHER] 登出失敗',
+                err
+            );
+        }
+
+        teacherToken = '';
+        localStorage.removeItem('teacherToken');
+        localStorage.removeItem('teacherInfo');
+
+        updateTeacherLoginUI(false);
+
+        document.getElementById(
+            'status'
+        ).textContent = '尚未登入';
+
+        document.getElementById(
+            'teacherPassword'
+        ).style.display = '';
+
+        document.getElementById(
+            'studentTable'
+        ).innerHTML = '';
+
+        document.getElementById(
+            'studentCount'
+        ).textContent = '';
+
+        alert('教師已登出');
+    }
+
+
+    function updateTeacherLoginUI(isLoggedIn) {
+        document.body.classList.toggle(
+            'teacher-logged-in',
+            Boolean(isLoggedIn)
+        );
+
+        const usernameInput =
+            document.getElementById(
+                'teacherUsername'
+            );
+
+        const passwordInput =
+            document.getElementById(
+                'teacherPassword'
+            );
+
+        const loginButton =
+            document.getElementById(
+                'teacherLoginButton'
+            );
+
+        const logoutButton =
+            document.getElementById(
+                'teacherLogoutButton'
+            );
+
+        const userBadge =
+            document.getElementById(
+                'teacher-current-user'
+            );
+
+        if (usernameInput) {
+            usernameInput.style.display =
+                isLoggedIn ? 'none' : '';
+
+            if (!isLoggedIn) {
+                usernameInput.value = '';
+            }
+        }
+
+        if (passwordInput) {
+            passwordInput.style.display =
+                isLoggedIn ? 'none' : '';
+
+            if (!isLoggedIn) {
+                passwordInput.value = '';
+            }
+        }
+
+        if (loginButton) {
+            loginButton.style.display =
+                isLoggedIn ? 'none' : '';
+        }
+
+        if (logoutButton) {
+            logoutButton.style.display =
+                isLoggedIn ? '' : 'none';
+        }
+
+        if (userBadge) {
+            if (isLoggedIn) {
+                try {
+                    const raw =
+                        localStorage.getItem(
+                            'teacherInfo'
+                        );
+
+                    const info =
+                        raw
+                            ? JSON.parse(raw)
+                            : null;
+
+                    userBadge.textContent =
+                        info?.username ||
+                        info?.name ||
+                        '';
+
+                    userBadge.style.display =
+                        userBadge.textContent
+                            ? 'inline-block'
+                            : 'none';
+
+                } catch (err) {
+                    userBadge.textContent = '';
+                    userBadge.style.display = 'none';
+                }
+
+            } else {
+                userBadge.textContent = '';
+                userBadge.style.display = 'none';
+            }
+        }
+
+        updateTeacherAccountAdminUI();
+        updateAdminClassUI();
+        updateDeletedClassUI();
+        updateSiteSettingsAdminUI();
+        updateOwnPasswordUI();
+        updateSystemStatusUI();
+    }
+
+
+async function setStudentActive(studentId, active) {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const actionText =
+            active ? '啟用' : '停用';
+
+        const ok = confirm(
+            `確定要${actionText}學生【${studentId}】嗎？`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            const data = await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/active`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+                    body: JSON.stringify({
+                        active
+                    })
+                }
+            );
+
+            alert(
+                `學生【${data.student.studentId}】已${actionText}`
+            );
+
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `${actionText}學生失敗：${err.message}`
+            );
+        }
+    }
+
+
+    function applyStudentFilter() {
+        const keyword =
+            document.getElementById(
+                'studentSearch'
+            ).value.trim().toLowerCase();
+
+        const classFilter =
+            document.getElementById(
+                'studentClassFilter'
+            ).value;
+
+        const status =
+            document.getElementById(
+                'studentStatusFilter'
+            ).value;
+
+        const filtered = allStudents.filter(student => {
+            const studentId =
+                (student.studentId || '').toLowerCase();
+
+            const name =
+                (student.name || '').toLowerCase();
+
+            const isActive =
+                student.active !== false;
+
+            const matchKeyword =
+                !keyword ||
+                studentId.includes(keyword) ||
+                name.includes(keyword);
+
+            const matchClass =
+                classFilter === 'all' ||
+                (student.className || '') === classFilter;
+
+            let matchStatus = true;
+
+            if (status === 'active') {
+                matchStatus = isActive;
+            }
+
+            if (status === 'inactive') {
+                matchStatus = !isActive;
+            }
+
+            return (
+                matchKeyword &&
+                matchClass &&
+                matchStatus
+            );
+        });
+
+        renderStudents(filtered);
+
+        document.getElementById(
+            'studentCount'
+        ).textContent =
+            `顯示 ${filtered.length} / ${allStudents.length} 位學生`;
+    }
+
+
+    async function showStudentProjects(studentId, studentName) {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        try {
+            const url =
+                `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/projects`;
+
+            console.log(
+                '[TEACHER] 讀取學生作品',
+                url
+            );
+
+            const data = await apiFetch(url);
+
+            const projects =
+                data.projects || [];
+
+            renderTeacherProjectList(
+                studentId,
+                studentName,
+                projects
+            );
+
+        } catch (err) {
+            console.error(
+                '[TEACHER] 讀取學生作品失敗',
+                err
+            );
+
+            alert(
+                `讀取學生作品失敗：${err.message}`
+            );
+        }
+    }
+
+
+    function closeTeacherProjectModal() {
+        document.getElementById(
+            'teacher-project-modal'
+        ).style.display = 'none';
+    }
+
+    function renderTeacherProjectList(
+        studentId,
+        studentName,
+        projects
+    ) {
+        const modal =
+            document.getElementById(
+                'teacher-project-modal'
+            );
+
+        const title =
+            document.getElementById(
+                'teacher-project-modal-title'
+            );
+
+        const list =
+            document.getElementById(
+                'teacher-project-list'
+            );
+
+        title.textContent =
+            `【${studentName || studentId}】的作品`;
+
+        list.innerHTML = '';
+
+        if (!projects.length) {
+            const empty =
+                document.createElement('div');
+
+            empty.textContent =
+                '目前沒有作品。';
+
+            list.appendChild(empty);
+
+        } else {
+            projects.forEach(project => {
+                const item =
+                    document.createElement('div');
+
+                item.className =
+                    'teacher-project-item';
+
+                const name =
+                    document.createElement('div');
+
+                name.className =
+                    'teacher-project-name';
+
+                name.textContent =
+                    project.name ||
+                    '未命名作品';
+
+                const meta =
+                    document.createElement('div');
+
+                meta.className =
+                    'teacher-project-meta';
+
+                const timeValue =
+                    project.updatedAt ||
+                    project.createdAt;
+
+                const timeText =
+                    timeValue
+                        ? new Date(timeValue)
+                            .toLocaleString('zh-TW')
+                        : '未知';
+
+                const size =
+                    Number(project.size || 0);
+
+                let sizeText = '未知';
+
+                if (size > 0) {
+                    if (size >= 1024 * 1024) {
+                        sizeText =
+                            (size / 1024 / 1024)
+                            .toFixed(2) + ' MB';
+                    } else {
+                        sizeText =
+                            (size / 1024)
+                            .toFixed(1) + ' KB';
+                    }
+                }
+
+                meta.textContent =
+                    `更新：${timeText} ｜ 大小：${sizeText}`;
+
+                const actions =
+                    document.createElement('div');
+
+                actions.className =
+                    'teacher-project-actions';
+
+                const openButton =
+                    document.createElement('button');
+
+                openButton.textContent = '開啟';
+
+                openButton.onclick = () => {
+                    openTeacherProject(
+                        studentId,
+                        project.id,
+                        project.name ||
+                        '未命名作品'
+                    );
+                };
+
+                const downloadButton =
+                    document.createElement('button');
+
+                downloadButton.textContent =
+                    '下載 SB3';
+
+                downloadButton.onclick = async () => {
+                    await downloadTeacherProject(
+                        studentId,
+                        project.id,
+                        project.name ||
+                        '未命名作品'
+                    );
+                };
+
+                actions.appendChild(openButton);
+                actions.appendChild(downloadButton);
+
+                item.appendChild(name);
+                item.appendChild(meta);
+                item.appendChild(actions);
+
+                list.appendChild(item);
+            });
+        }
+
+        modal.style.display = 'flex';
+    }
+
+
+    async function downloadTeacherProject(
+        studentId,
+        projectId,
+        projectName
+    ) {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/projects/${encodeURIComponent(projectId)}/file`,
+                {
+                    headers: {
+                        'Authorization':
+                            `Bearer ${teacherToken}`
+                    }
+                }
+            );
+
+            if (res.status === 401) {
+                teacherToken = '';
+
+                localStorage.removeItem(
+                    'teacherToken'
+                );
+
+                localStorage.removeItem(
+                    'teacherInfo'
+                );
+
+                updateTeacherLoginUI(false);
+
+                document.getElementById(
+                    'status'
+                ).textContent = '尚未登入';
+
+                throw new Error(
+                    '教師登入已失效，請重新登入'
+                );
+            }
+
+            if (!res.ok) {
+                let message =
+                    `HTTP ${res.status}`;
+
+                try {
+                    const data =
+                        await res.json();
+
+                    message =
+                        data.message ||
+                        message;
+                } catch (err) {
+                }
+
+                throw new Error(message);
+            }
+
+            const blob =
+                await res.blob();
+
+            const url =
+                URL.createObjectURL(blob);
+
+            const a =
+                document.createElement('a');
+
+            a.href = url;
+            a.download =
+                `${projectName}.sb3`;
+
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+
+            URL.revokeObjectURL(url);
+
+        } catch (err) {
+            alert(
+                `下載作品失敗：${err.message}`
+            );
+        }
+    }
+
+
+    function parseCsvLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+
+            if (ch === '"') {
+                if (
+                    inQuotes &&
+                    line[i + 1] === '"'
+                ) {
+                    current += '"';
+                    i++;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+
+            } else if (
+                ch === ',' &&
+                !inQuotes
+            ) {
+                result.push(
+                    current.trim()
+                );
+
+                current = '';
+
+            } else {
+                current += ch;
+            }
+        }
+
+        result.push(current.trim());
+
+        return result;
+    }
+
+
+    async function importStudentsCsv() {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const input =
+            document.getElementById(
+                'studentCsvFile'
+            );
+
+        const file =
+            input.files &&
+            input.files[0];
+
+        if (!file) {
+            alert('請先選擇 CSV 檔案');
+            return;
+        }
+
+        try {
+            let text =
+                await file.text();
+
+            text = text
+                .replace(/^\uFEFF/, '')
+                .trim();
+
+            if (!text) {
+                throw new Error(
+                    'CSV 檔案是空的'
+                );
+            }
+
+            const lines =
+                text.split(/\r?\n/);
+
+            const headers =
+                parseCsvLine(lines[0]);
+
+            const studentIdIndex =
+                headers.indexOf(
+                    'studentId'
+                );
+
+            const nameIndex =
+                headers.indexOf(
+                    'name'
+                );
+
+            const classNameIndex =
+                headers.indexOf(
+                    'className'
+                );
+
+            const seatNoIndex =
+                headers.indexOf(
+                    'seatNo'
+                );
+
+            const passwordIndex =
+                headers.indexOf(
+                    'password'
+                );
+
+            if (
+                studentIdIndex === -1 ||
+                nameIndex === -1 ||
+                classNameIndex === -1 ||
+                seatNoIndex === -1 ||
+                passwordIndex === -1
+            ) {
+                throw new Error(
+                    'CSV 第一列必須是 studentId,name,className,seatNo,password'
+                );
+            }
+
+            const rows = [];
+
+            for (
+                let i = 1;
+                i < lines.length;
+                i++
+            ) {
+                if (!lines[i].trim()) {
+                    continue;
+                }
+
+                const cols =
+                    parseCsvLine(
+                        lines[i]
+                    );
+
+                rows.push({
+                    studentId:
+                        cols[
+                            studentIdIndex
+                        ] || '',
+
+                    name:
+                        cols[
+                            nameIndex
+                        ] || '',
+
+                    className:
+                        cols[
+                            classNameIndex
+                        ] || '',
+
+                    seatNo:
+                        cols[
+                            seatNoIndex
+                        ] || '',
+
+                    password:
+                        cols[
+                            passwordIndex
+                        ] || ''
+                });
+            }
+
+            if (!rows.length) {
+                throw new Error(
+                    'CSV 沒有學生資料'
+                );
+            }
+
+            const ok = confirm(
+                `準備匯入 ${rows.length} 筆學生資料，確定繼續嗎？`
+            );
+
+            if (!ok) {
+                return;
+            }
+
+            const data =
+                await apiFetch(
+                    `http://${window.location.hostname}:3000/teacher/students/import`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+                        body:
+                            JSON.stringify({
+                                rows
+                            })
+                    }
+                );
+
+            const result =
+                document.getElementById(
+                    'importResult'
+                );
+
+            let message =
+                `匯入完成：新增 ${data.added}、更新 ${data.updated}、略過 ${data.skipped}，目前共 ${data.total} 位學生。`;
+
+            if (
+                data.errors &&
+                data.errors.length
+            ) {
+                message +=
+                    '\n\n問題資料：\n' +
+                    data.errors.join('\n');
+            }
+
+            result.innerHTML = '';
+
+                const parts =
+                    message.split(
+                        '\n\n問題資料：'
+                    );
+
+                const summarySpan =
+                    document.createElement(
+                        'span'
+                    );
+
+                summarySpan.textContent =
+                    parts[0];
+
+                result.appendChild(
+                    summarySpan
+                );
+
+                if (parts.length > 1) {
+                    const errorSpan =
+                        document.createElement(
+                            'span'
+                        );
+
+                    errorSpan.style.color =
+                        '#c62828';
+
+                    errorSpan.style.fontWeight =
+                        '700';
+
+                    errorSpan.style.marginLeft =
+                        '8px';
+
+                    errorSpan.textContent =
+                        '問題資料：' +
+                        parts.slice(1).join('；');
+
+                    result.appendChild(
+                        errorSpan
+                    );
+                }
+
+            input.value = '';
+
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `大量匯入失敗：${err.message}`
+            );
+        }
+    }
+
+
+    function downloadCsvTemplate() {
+        const text =
+            '\uFEFF' +
+            'studentId,name,className,seatNo,password\n' +
+            'TEST001,測試學生甲,TEST601,01,DemoPass01\n' +
+            'TEST002,測試學生乙,TEST601,02,DemoPass02\n';
+
+        const blob =
+            new Blob(
+                [text],
+                {
+                    type:
+                        'text/csv;charset=utf-8'
+                }
+            );
+
+        const url =
+            URL.createObjectURL(blob);
+
+        const a =
+            document.createElement('a');
+
+        a.href = url;
+        a.download =
+            'students-template.csv';
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+    }
+
+
+    function csvEscape(value) {
+        const text =
+            String(value ?? '');
+
+        if (
+            text.includes(',') ||
+            text.includes('"') ||
+            text.includes('\n')
+        ) {
+            return '"' +
+                text.replace(/"/g, '""') +
+                '"';
+        }
+
+        return text;
+    }
+
+
+    function exportCurrentStudentsCsv() {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        if (!allStudents.length) {
+            alert('目前沒有學生資料可以匯出');
+            return;
+        }
+
+        const rows = [
+            [
+                'studentId',
+                'name',
+                'className',
+                'seatNo',
+                'password'
+            ]
+        ];
+
+        allStudents.forEach(student => {
+            rows.push([
+                student.studentId || '',
+                student.name || '',
+                student.className || '',
+                student.seatNo || '',
+                ''
+            ]);
+        });
+
+        const text =
+            '\uFEFF' +
+            rows.map(row =>
+                row.map(csvEscape).join(',')
+            ).join('\r\n');
+
+        const blob =
+            new Blob(
+                [text],
+                {
+                    type:
+                        'text/csv;charset=utf-8'
+                }
+            );
+
+        const url =
+            URL.createObjectURL(blob);
+
+        const a =
+            document.createElement('a');
+
+        const today =
+            new Date()
+                .toISOString()
+                .slice(0, 10);
+
+        a.href = url;
+
+        a.download =
+            `students-${today}.csv`;
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+    }
+
+
+    
+async function refreshCurrentTeacherInfo() {
+    if (!teacherToken) {
+        return null;
+    }
+
+    const data = await apiFetch(
+        `http://${window.location.hostname}:3000/teacher/me`
+    );
+
+    if (
+        data &&
+        data.teacher
+    ) {
+        localStorage.setItem(
+            'teacherInfo',
+            JSON.stringify(
+                data.teacher
+            )
+        );
+
+        return data.teacher;
+    }
+
+    return null;
+}
+
+
+function updateClassFilter() {
+    const select =
+        document.getElementById(
+            'studentClassFilter'
+        );
+
+    const current =
+        select.value;
+
+    let info = null;
+
+    try {
+        const raw =
+            localStorage.getItem(
+                'teacherInfo'
+            );
+
+        info =
+            raw
+                ? JSON.parse(raw)
+                : null;
+
+    } catch (err) {
+        info = null;
+    }
+
+    const managedClasses =
+        info &&
+        Array.isArray(
+            info.managedClasses
+        )
+            ? info.managedClasses
+            : [];
+
+    let classes = [];
+
+    if (
+        managedClasses.includes('*')
+    ) {
+        classes = Array.from(
+            new Set(
+                allStudents
+                    .map(student =>
+                        (
+                            student.className ||
+                            ''
+                        ).trim()
+                    )
+                    .filter(Boolean)
+            )
+        );
+    } else {
+        classes =
+            managedClasses
+                .map(item =>
+                    String(item).trim()
+                )
+                .filter(Boolean);
+    }
+
+    classes = Array.from(
+        new Set(classes)
+    ).sort(
+        (a, b) =>
+            a.localeCompare(
+                b,
+                undefined,
+                {numeric: true}
+            )
+    );
+
+    select.innerHTML =
+        '<option value="all">全部班級</option>';
+
+    classes.forEach(className => {
+        const option =
+            document.createElement(
+                'option'
+            );
+
+        option.value =
+            className;
+
+        option.textContent =
+            className;
+
+        select.appendChild(option);
+    });
+
+    if (
+        current === 'all' ||
+        classes.includes(current)
+    ) {
+        select.value =
+            current;
+    } else {
+        select.value =
+            'all';
+    }
+}
+
+
+function generateClassCsv() {
+        const className =
+            document.getElementById(
+                'generateClassName'
+            ).value.trim();
+
+        const count =
+            parseInt(
+                document.getElementById(
+                    'generateStudentCount'
+                ).value,
+                10
+            );
+
+        if (!className) {
+            alert('請輸入班級，例如 105');
+            return;
+        }
+
+        if (
+            !Number.isInteger(count) ||
+            count < 1 ||
+            count > 60
+        ) {
+            alert('學生人數請輸入 1～60');
+            return;
+        }
+
+        const rows = [
+            [
+                'studentId',
+                'name',
+                'className',
+                'seatNo',
+                'password'
+            ]
+        ];
+
+        for (let seat = 1; seat <= count; seat++) {
+            const seatNo =
+                String(seat).padStart(2, '0');
+
+            const studentId =
+                `${className}${seatNo}`;
+
+            rows.push([
+                studentId,
+                '',
+                className,
+                seatNo,
+                studentId
+            ]);
+        }
+
+        const text =
+            '\uFEFF' +
+            rows.map(row =>
+                row.map(csvEscape).join(',')
+            ).join('\r\n');
+
+        const blob =
+            new Blob(
+                [text],
+                {
+                    type:
+                        'text/csv;charset=utf-8'
+                }
+            );
+
+        const url =
+            URL.createObjectURL(blob);
+
+        const a =
+            document.createElement('a');
+
+        a.href = url;
+        a.download =
+            `class-${className}-students.csv`;
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+    }
+
+
+    async function createClassAccounts() {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const className =
+            document.getElementById(
+                'generateClassName'
+            ).value.trim();
+
+        const count =
+            parseInt(
+                document.getElementById(
+                    'generateStudentCount'
+                ).value,
+                10
+            );
+
+        if (!className) {
+            alert('請輸入班級，例如 105');
+            return;
+        }
+
+        if (
+            !Number.isInteger(count) ||
+            count < 1 ||
+            count > 60
+        ) {
+            alert('學生人數請輸入 1～60');
+            return;
+        }
+
+        const ok = confirm(
+            `確定建立 ${className} 班共 ${count} 個帳號嗎？\n\n` +
+            `帳號與初始密碼會從 ${className}01 開始。`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            const data = await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/classes/create`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+                    body: JSON.stringify({
+                        className,
+                        count
+                    })
+                }
+            );
+
+            alert(
+                `建立完成！\n` +
+                `新增：${data.added}\n` +
+                `略過既有帳號：${data.skipped}`
+            );
+
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `建立整班帳號失敗：${err.message}`
+            );
+        }
+    }
+
+
+    async function resetClassPasswords() {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const className =
+            document.getElementById(
+                'generateClassName'
+            ).value.trim();
+
+        if (!className) {
+            alert('請先輸入班級，例如 105');
+            return;
+        }
+
+        const ok = confirm(
+            `確定要把【${className} 班】所有學生密碼重設為各自的學號嗎？\n\n` +
+            `例如：10501 的密碼會變成 10501。\n` +
+            `這會覆蓋學生目前使用中的密碼。`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            const data = await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/reset-passwords`,
+                {
+                    method: 'POST'
+                }
+            );
+
+            alert(
+                `完成！\n` +
+                `${data.className} 班共 ${data.resetCount} 位學生已重設密碼。`
+            );
+
+        } catch (err) {
+            alert(
+                `整班重設密碼失敗：${err.message}`
+            );
+        }
+    }
+
+
+    async function setClassActive(active) {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const className =
+            document.getElementById(
+                'generateClassName'
+            ).value.trim();
+
+        if (!className) {
+            alert('請先輸入班級，例如 105');
+            return;
+        }
+
+        const actionText =
+            active ? '啟用' : '停用';
+
+        const ok = confirm(
+            `確定要${actionText}【${className} 班】所有學生帳號嗎？`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            const data = await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/active`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+                    body: JSON.stringify({
+                        active
+                    })
+                }
+            );
+
+            alert(
+                `${data.className} 班已${actionText}。\n` +
+                `共影響 ${data.changedCount} 位學生。`
+            );
+
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `整班${actionText}失敗：${err.message}`
+            );
+        }
+    }
+
+
+    function closeClassProjectSummary() {
+        document.getElementById(
+            'class-project-summary-modal'
+        ).style.display = 'none';
+    }
+
+
+    async function showClassProjectSummary() {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const className =
+            document.getElementById(
+                'generateClassName'
+            ).value.trim();
+
+        if (!className) {
+            alert('請先輸入班級，例如 105');
+            return;
+        }
+
+        try {
+            const data = await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/projects-summary`
+            );
+
+            currentClassProjectSummary = data;
+
+            const tbody =
+                document.getElementById(
+                    'class-project-summary-body'
+                );
+
+            tbody.innerHTML = '';
+
+            document.getElementById(
+                'class-project-summary-title'
+            ).textContent =
+                `【${className} 班】作品總覽`;
+
+            (data.students || []).forEach(student => {
+                const tr =
+                    document.createElement('tr');
+
+                const basicValues = [
+                    student.seatNo || '',
+                    student.studentId || '',
+                    student.name || '',
+                    String(student.projectCount || 0)
+                ];
+
+                basicValues.forEach(value => {
+                    const td =
+                        document.createElement('td');
+
+                    td.textContent = value;
+
+                    tr.appendChild(td);
+                });
+
+                const latestProjects =
+                    Array.isArray(student.latestProjects)
+                        ? student.latestProjects
+                        : [];
+
+                for (let i = 0; i < 3; i++) {
+                    const td =
+                        document.createElement('td');
+
+                    const project =
+                        latestProjects[i];
+
+                    if (
+                        project &&
+                        project.id
+                    ) {
+                        const button =
+                            document.createElement('button');
+
+                        button.textContent =
+                            project.name ||
+                            '未命名作品';
+
+                        button.onclick = () => {
+                            openTeacherProject(
+                                student.studentId,
+                                project.id,
+                                project.name ||
+                                '未命名作品'
+                            );
+                        };
+
+                        td.appendChild(button);
+
+                    } else {
+                        td.textContent = '';
+                    }
+
+                    tr.appendChild(td);
+                }
+
+                const latestTd =
+                    document.createElement('td');
+
+                latestTd.textContent =
+                    student.latestAt
+                        ? new Date(student.latestAt)
+                            .toLocaleString('zh-TW')
+                        : '尚無作品';
+
+                tr.appendChild(latestTd);
+
+                const actionTd =
+                    document.createElement('td');
+
+                const button =
+                    document.createElement('button');
+
+                button.textContent = '作品';
+
+                button.onclick = () => {
+                    closeClassProjectSummary();
+
+                    showStudentProjects(
+                        student.studentId,
+                        student.name || ''
+                    );
+                };
+
+                actionTd.appendChild(button);
+                tr.appendChild(actionTd);
+
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById(
+                'class-project-summary-modal'
+            ).style.display = 'flex';
+
+        } catch (err) {
+            alert(
+                `讀取班級作品總覽失敗：${err.message}`
+            );
+        }
+    }
+
+
+    function exportClassProjectSummaryCsv() {
+        if (
+            !currentClassProjectSummary ||
+            !Array.isArray(
+                currentClassProjectSummary.students
+            )
+        ) {
+            alert('目前沒有班級作品總覽可以匯出');
+            return;
+        }
+
+        const data =
+            currentClassProjectSummary;
+
+        const rows = [
+            [
+                'className',
+                'seatNo',
+                'studentId',
+                'name',
+                'projectCount',
+                'latestAt'
+            ]
+        ];
+
+        data.students.forEach(student => {
+            rows.push([
+                data.className || '',
+                student.seatNo || '',
+                student.studentId || '',
+                student.name || '',
+                student.projectCount || 0,
+                student.latestAt
+                    ? new Date(
+                        student.latestAt
+                    ).toLocaleString('zh-TW')
+                    : ''
+            ]);
+        });
+
+        const text =
+            '\uFEFF' +
+            rows.map(row =>
+                row.map(csvEscape).join(',')
+            ).join('\r\n');
+
+        const blob =
+            new Blob(
+                [text],
+                {
+                    type:
+                        'text/csv;charset=utf-8'
+                }
+            );
+
+        const url =
+            URL.createObjectURL(blob);
+
+        const a =
+            document.createElement('a');
+
+        const today =
+            new Date()
+                .toISOString()
+                .slice(0, 10);
+
+        a.href = url;
+
+        a.download =
+            `class-${data.className}-projects-${today}.csv`;
+
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+
+        URL.revokeObjectURL(url);
+    }
+
+
+    function openTeacherProject(
+        studentId,
+        projectId,
+        projectName
+    ) {
+        const url =
+            `/teacher-view.html` +
+            `?studentId=${encodeURIComponent(studentId)}` +
+            `&projectId=${encodeURIComponent(projectId)}` +
+            `&name=${encodeURIComponent(projectName || '未命名作品')}`;
+
+        window.open(
+            url,
+            '_blank'
+        );
+    }
+
+
+    async function exportClassProjectSummaryXlsx() {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const className =
+            document.getElementById(
+                'generateClassName'
+            ).value.trim();
+
+        if (!className) {
+            alert('請先輸入班級，例如 105');
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/projects.xlsx`,
+                {
+                    headers: {
+                        'Authorization':
+                            `Bearer ${teacherToken}`
+                    }
+                }
+            );
+
+            if (res.status === 401) {
+                alert('教師登入已逾時，請重新登入');
+                return;
+            }
+
+            if (!res.ok) {
+                let message =
+                    'Excel 匯出失敗';
+
+                try {
+                    const data =
+                        await res.json();
+
+                    message =
+                        data.message ||
+                        message;
+                } catch {
+                }
+
+                throw new Error(message);
+            }
+
+            const blob =
+                await res.blob();
+
+            const url =
+                URL.createObjectURL(blob);
+
+            const a =
+                document.createElement('a');
+
+            a.href = url;
+
+            a.download =
+                `class-${className}-projects.xlsx`;
+
+            document.body.appendChild(a);
+
+            a.click();
+
+            a.remove();
+
+            URL.revokeObjectURL(url);
+
+        } catch (err) {
+            alert(
+                `Excel 匯出失敗：${err.message}`
+            );
+        }
+    }
+
+
+    function getCurrentTeacherInfo() {
+        try {
+            const raw =
+                localStorage.getItem(
+                    'teacherInfo'
+                );
+
+            return raw
+                ? JSON.parse(raw)
+                : null;
+
+        } catch (err) {
+            return null;
+        }
+    }
+
+
+    function updateTeacherAccountAdminUI() {
+        const card =
+            document.getElementById(
+                'teacher-account-card'
+            );
+
+        if (!card) {
+            return;
+        }
+
+        const info =
+            getCurrentTeacherInfo();
+
+        const isAdmin =
+            Boolean(teacherToken) &&
+            info &&
+            info.role === 'admin';
+
+        card.style.display =
+            isAdmin
+                ? 'block'
+                : 'none';
+
+        if (isAdmin) {
+            loadTeacherAccounts()
+                .catch(err => {
+                    console.error(
+                        '讀取教師帳號失敗',
+                        err
+                    );
+                });
+        }
+    }
+
+
+    async function loadTeacherAccounts() {
+        if (!teacherToken) {
+            return;
+        }
+
+        const data =
+            await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/accounts`
+            );
+
+        const tbody =
+            document.getElementById(
+                'teacher-account-table-body'
+            );
+
+        tbody.innerHTML = '';
+
+        (data.teachers || [])
+            .forEach(teacher => {
+                const tr =
+                    document.createElement(
+                        'tr'
+                    );
+
+            if (teacher.active === false) {
+                tr.classList.add(
+                    'class-row-inactive'
+                );
+            }
+
+const values = [
+                    teacher.username || '',
+                    teacher.name || '',
+                    teacher.role === 'admin'
+                        ? '管理者'
+                        : '教師',
+                    teacher.role === 'admin'
+                ? '全校'
+                : (
+                    Array.isArray(
+                        teacher.managedClasses
+                    )
+                        ? teacher.managedClasses.join(', ')
+                        : ''
+                ),
+                    teacher.active === false
+                        ? '已停用'
+                        : '啟用'
+                ];
+
+                values.forEach(value => {
+                    const td =
+                        document.createElement(
+                            'td'
+                        );
+
+                    td.textContent = value;
+
+                    tr.appendChild(td);
+                });
+
+                const actionTd =
+                    document.createElement('td');
+
+                const editButton =
+                    document.createElement('button');
+
+                editButton.textContent = '修改';
+
+                editButton.onclick = () => {
+                    editTeacherAccount(
+                        teacher
+                    );
+                };
+
+                actionTd.appendChild(
+                    editButton
+                );
+
+                const activeButton =
+                    document.createElement('button');
+
+                activeButton.textContent =
+                    teacher.active === false
+                        ? '啟用'
+                        : '停用';
+
+                activeButton.onclick = () => {
+                    toggleTeacherAccount(
+                        teacher
+                    );
+                };
+
+                actionTd.appendChild(
+                    activeButton
+                );
+
+            const currentInfo =
+                getCurrentTeacherInfo();
+
+            if (
+                !currentInfo ||
+                teacher.username !==
+                    currentInfo.username
+            ) {
+                const deleteButton =
+                    document.createElement(
+                        'button'
+                    );
+
+                deleteButton.textContent =
+                    '刪除';
+
+                deleteButton.style.color =
+                    '#b71c1c';
+
+                deleteButton.onclick =
+                    () => {
+                        deleteTeacherAccount(
+                            teacher
+                        );
+                    };
+
+                actionTd.appendChild(
+                    deleteButton
+                );
+            }
+
+
+                tr.appendChild(actionTd);
+
+                tbody.appendChild(tr);
+            });
+    }
+
+
+    async function createTeacherAccount() {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const info =
+            getCurrentTeacherInfo();
+
+        if (
+            !info ||
+            info.role !== 'admin'
+        ) {
+            alert('只有管理者可以新增教師帳號');
+            return;
+        }
+
+        const username =
+            document.getElementById(
+                'newTeacherUsername'
+            ).value.trim();
+
+        const name =
+            document.getElementById(
+                'newTeacherName'
+            ).value.trim();
+
+        const password =
+            document.getElementById(
+                'newTeacherPassword'
+            ).value;
+
+        const role =
+            document.getElementById(
+                'newTeacherRole'
+            ).value;
+
+        const classText =
+            document.getElementById(
+                'newTeacherClasses'
+            ).value.trim();
+
+        const managedClasses =
+            classText
+                .split(/[\s,，、]+/)
+                .map(item => item.trim())
+                .filter(Boolean);
+
+        if (!username) {
+            alert('請輸入教師帳號');
+            return;
+        }
+
+        if (!name) {
+            alert('請輸入教師姓名');
+            return;
+        }
+
+        if (!password) {
+            alert('請輸入初始密碼');
+            return;
+        }
+
+        if (!managedClasses.length) {
+            alert('請至少指定一個可管理班級');
+            return;
+        }
+
+        try {
+            const data =
+                await apiFetch(
+                    `http://${window.location.hostname}:3000/teacher/accounts`,
+                    {
+                        method: 'POST',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body: JSON.stringify({
+                            username,
+                            name,
+                            password,
+                            role,
+                            managedClasses
+                        })
+                    }
+                );
+
+            alert(
+                `教師帳號 ${data.teacher.username} 已建立`
+            );
+
+            document.getElementById(
+                'newTeacherUsername'
+            ).value = '';
+
+            document.getElementById(
+                'newTeacherName'
+            ).value = '';
+
+            document.getElementById(
+                'newTeacherPassword'
+            ).value = '';
+
+            document.getElementById(
+                'newTeacherClasses'
+            ).value = '';
+
+            document.getElementById(
+                'newTeacherRole'
+            ).value = 'teacher';
+
+            await loadTeacherAccounts();
+
+        } catch (err) {
+            alert(
+                `新增教師失敗：${err.message}`
+            );
+        }
+    }
+
+
+
+    function updateAdminClassUI() {
+        const card =
+            document.getElementById(
+                'admin-class-card'
+            );
+
+        if (!card) {
+            return;
+        }
+
+        let info = null;
+
+        try {
+            const raw =
+                localStorage.getItem(
+                    'teacherInfo'
+                );
+
+            info =
+                raw
+                    ? JSON.parse(raw)
+                    : null;
+
+        } catch (err) {
+            info = null;
+        }
+
+        const isAdmin =
+            Boolean(teacherToken) &&
+            info &&
+            info.role === 'admin';
+
+        card.style.display =
+            isAdmin
+                ? 'block'
+                : 'none';
+
+        if (isAdmin) {
+            loadAdminClasses()
+                .catch(err => {
+                    console.error(
+                        '讀取全校班級失敗',
+                        err
+                    );
+                });
+        }
+    }
+
+
+    async function loadAdminClasses() {
+        if (!teacherToken) {
+            return;
+        }
+
+        const data =
+            await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/classes`
+            );
+
+        const tbody =
+            document.getElementById(
+                'admin-class-table-body'
+            );
+
+        tbody.innerHTML = '';
+
+        (data.classes || [])
+            .forEach(item => {
+                const tr =
+                    document.createElement(
+                        'tr'
+                    );
+
+                const values = [
+                    item.className || '',
+                    String(
+                        item.studentCount || 0
+                    ),
+                    String(
+                        item.activeCount || 0
+                    ),
+                    String(
+                        item.inactiveCount || 0
+                    )
+                ];
+
+                values.forEach(value => {
+                    const td =
+                        document.createElement(
+                            'td'
+                        );
+
+                    td.textContent = value;
+
+                    tr.appendChild(td);
+                });
+
+                const actionTd =
+                    document.createElement(
+                        'td'
+                    );
+
+                const activeButton =
+                    document.createElement(
+                        'button'
+                    );
+
+                const allInactive =
+                    Number(item.activeCount || 0) === 0 &&
+                    Number(item.inactiveCount || 0) > 0;
+
+                if (allInactive) {
+                    tr.classList.add(
+                        'class-row-inactive'
+                    );
+                }
+
+                if (allInactive) {
+                    activeButton.textContent =
+                        '整班啟用';
+
+                    activeButton.onclick = () => {
+                        setAdminClassActive(
+                            item.className,
+                            true
+                        );
+                    };
+
+                } else {
+                    activeButton.textContent =
+                        '整班停用';
+
+                    activeButton.onclick = () => {
+                        setAdminClassActive(
+                            item.className,
+                            false
+                        );
+                    };
+                }
+
+                actionTd.appendChild(
+                    activeButton
+                );
+
+
+                const deleteButton =
+                    document.createElement(
+                        'button'
+                    );
+
+                deleteButton.textContent =
+                    '刪除班級';
+
+                deleteButton.style.color =
+                    '#b71c1c';
+
+                deleteButton.onclick = () => {
+                    deleteAdminClass(
+                        item.className
+                    );
+                };
+
+                actionTd.appendChild(
+                    deleteButton
+                );
+
+                tr.appendChild(
+                    actionTd
+                );
+
+                tbody.appendChild(
+                    tr
+                );
+            });
+    }
+
+
+    async function deleteAdminClass(
+        className
+    ) {
+        if (!teacherToken) {
+            alert('請先登入教師管理');
+            return;
+        }
+
+        const info =
+            getCurrentTeacherInfo();
+
+        if (
+            !info ||
+            info.role !== 'admin'
+        ) {
+            alert('只有管理員可以刪除班級');
+            return;
+        }
+
+        const confirmation =
+            prompt(
+                `刪除【${className} 班】會移除該班學生帳號，作品會移到備份區。\n\n請輸入班級名稱「${className}」確認：`
+            );
+
+        if (confirmation === null) {
+            return;
+        }
+
+        if (
+            confirmation.trim() !==
+            className
+        ) {
+            alert(
+                '班級名稱不一致，已取消刪除'
+            );
+            return;
+        }
+
+        const finalConfirm =
+            confirm(
+                `確定刪除 ${className} 班嗎？`
+            );
+
+        if (!finalConfirm) {
+            return;
+        }
+
+        try {
+            const data =
+                await apiFetch(
+                    `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}`,
+                    {
+                        method: 'DELETE',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body:
+                            JSON.stringify({
+                                confirmClassName:
+                                    className
+                            })
+                    }
+                );
+
+            alert(
+                `${className} 班已刪除。\n` +
+                `移除學生：${data.removedStudents}\n` +
+                `備份作品資料夾：${data.movedProjectFolders}\n` +
+                `更新教師權限：${data.updatedTeachers}`
+            );
+
+            await loadAdminClasses();
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `刪除班級失敗：${err.message}`
+            );
+        }
+    }
+
+
+
+    function updateDeletedClassUI() {
+        const card =
+            document.getElementById(
+                'deleted-class-card'
+            );
+
+        if (!card) {
+            return;
+        }
+
+        const info =
+            getCurrentTeacherInfo();
+
+        const isAdmin =
+            Boolean(teacherToken) &&
+            info &&
+            info.role === 'admin';
+
+        card.style.display =
+            isAdmin
+                ? 'block'
+                : 'none';
+
+        if (isAdmin) {
+            loadDeletedClasses()
+                .catch(err => {
+                    console.error(
+                        '讀取已刪除班級失敗',
+                        err
+                    );
+                });
+        }
+    }
+
+
+    async function loadDeletedClasses() {
+        if (!teacherToken) {
+            return;
+        }
+
+        const data =
+            await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/deleted-classes`
+            );
+
+        const tbody =
+            document.getElementById(
+                'deleted-class-table-body'
+            );
+
+        tbody.innerHTML = '';
+
+        (data.deletedClasses || [])
+            .forEach(item => {
+                const tr =
+                    document.createElement('tr');
+
+                const values = [
+                    item.className || '',
+                    String(
+                        item.studentCount || 0
+                    ),
+                    item.folderName || ''
+                ];
+
+                values.forEach(value => {
+                    const td =
+                        document.createElement(
+                            'td'
+                        );
+
+                    td.textContent = value;
+
+                    tr.appendChild(td);
+                });
+
+                const actionTd =
+                    document.createElement(
+                        'td'
+                    );
+
+                const restoreButton =
+                    document.createElement(
+                        'button'
+                    );
+
+                restoreButton.textContent =
+                    '還原';
+
+                restoreButton.onclick = () => {
+                    restoreDeletedClass(
+                        item.folderName,
+                        item.className
+                    );
+                };
+
+                actionTd.appendChild(
+                    restoreButton
+                );
+
+                tr.appendChild(
+                    actionTd
+                );
+
+                tbody.appendChild(tr);
+            });
+    }
+
+
+    async function restoreDeletedClass(
+        folderName,
+        className
+    ) {
+        const info =
+            getCurrentTeacherInfo();
+
+        if (
+            !info ||
+            info.role !== 'admin'
+        ) {
+            alert('只有管理員可以還原班級');
+            return;
+        }
+
+        const ok = confirm(
+            `確定要還原【${className} 班】嗎？`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            const data =
+                await apiFetch(
+                    `http://${window.location.hostname}:3000/teacher/deleted-classes/${encodeURIComponent(folderName)}/restore`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        }
+                    }
+                );
+
+            alert(
+                `${data.className} 班已還原。\n` +
+                `還原學生：${data.restoredStudents}\n` +
+                `還原作品資料夾：${data.restoredProjectFolders}`
+            );
+
+            await loadDeletedClasses();
+            await loadAdminClasses();
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `還原班級失敗：${err.message}`
+            );
+        }
+    }
+
+
+
+    function updateSiteSettingsAdminUI() {
+        const card =
+            document.getElementById(
+                'site-settings-card'
+            );
+
+        if (!card) {
+            return;
+        }
+
+        const info =
+            getCurrentTeacherInfo();
+
+        const isAdmin =
+            Boolean(teacherToken) &&
+            info &&
+            info.role === 'admin';
+
+        card.style.display =
+            isAdmin
+                ? 'block'
+                : 'none';
+
+        if (isAdmin) {
+            loadSiteSettingsAdmin()
+                .catch(err => {
+                    console.error(
+                        '讀取系統顯示設定失敗',
+                        err
+                    );
+                });
+        }
+    }
+
+
+    async function loadSiteSettingsAdmin() {
+        const res = await fetch(
+            `http://${window.location.hostname}:3000/settings`
+        );
+
+        const data =
+            await res.json();
+
+        if (
+            !res.ok ||
+            data.status !== 'ok'
+        ) {
+            throw new Error(
+                data.message ||
+                '讀取系統設定失敗'
+            );
+        }
+
+        const prefix =
+            data.settings?.sitePrefix ||
+            '校內';
+
+        const input =
+            document.getElementById(
+                'sitePrefixInput'
+            );
+
+        const preview =
+            document.getElementById(
+                'sitePrefixPreview'
+            );
+
+        input.value = prefix;
+
+        preview.textContent =
+            `${prefix} Scratch 雲端平台`;
+    }
+
+
+    async function saveSiteSettings() {
+        const info =
+            getCurrentTeacherInfo();
+
+        if (
+            !info ||
+            info.role !== 'admin'
+        ) {
+            alert('只有管理員可以修改系統設定');
+            return;
+        }
+
+        const input =
+            document.getElementById(
+                'sitePrefixInput'
+            );
+
+        const sitePrefix =
+            input.value.trim();
+
+        if (!sitePrefix) {
+            alert('平台名稱前綴不可空白');
+            return;
+        }
+
+        try {
+            const data =
+                await apiFetch(
+                    `http://${window.location.hostname}:3000/teacher/settings`,
+                    {
+                        method: 'PUT',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body:
+                            JSON.stringify({
+                                sitePrefix
+                            })
+                    }
+                );
+
+            const savedPrefix =
+                data.settings?.sitePrefix ||
+                sitePrefix;
+
+            document.getElementById(
+                'sitePrefixPreview'
+            ).textContent =
+                `${savedPrefix} Scratch 雲端平台`;
+
+            alert('系統顯示設定已儲存');
+
+        } catch (err) {
+            alert(
+                `儲存系統設定失敗：${err.message}`
+            );
+        }
+    }
+
+
+    document.addEventListener(
+        'input',
+        event => {
+            if (
+                event.target &&
+                event.target.id ===
+                    'sitePrefixInput'
+            ) {
+                const value =
+                    event.target.value.trim() ||
+                    '校內';
+
+                const preview =
+                    document.getElementById(
+                        'sitePrefixPreview'
+                    );
+
+                if (preview) {
+                    preview.textContent =
+                        `${value} Scratch 雲端平台`;
+                }
+            }
+        }
+    );
+
+
+
+    async function setAdminClassActive(
+        className,
+        active
+    ) {
+        const info =
+            getCurrentTeacherInfo();
+
+        if (
+            !info ||
+            info.role !== 'admin'
+        ) {
+            alert('只有管理員可以啟用或停用整班');
+            return;
+        }
+
+        const actionText =
+            active
+                ? '啟用'
+                : '停用';
+
+        const ok = confirm(
+            `確定要${actionText}【${className} 班】所有學生帳號嗎？`
+        );
+
+        if (!ok) {
+            return;
+        }
+
+        try {
+            const data =
+                await apiFetch(
+                    `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/active`,
+                    {
+                        method: 'POST',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body:
+                            JSON.stringify({
+                                active
+                            })
+                    }
+                );
+
+            alert(
+                `${className} 班已${actionText}。\n` +
+                `影響學生：${data.updated ?? data.count ?? ''}`
+            );
+
+            await loadAdminClasses();
+            await loadStudents();
+
+        } catch (err) {
+            alert(
+                `整班${actionText}失敗：${err.message}`
+            );
+        }
+    }
+
+
+
+    function updateOwnPasswordUI() {
+        const card =
+            document.getElementById(
+                'change-own-password-card'
+            );
+
+        if (!card) {
+            return;
+        }
+
+        card.style.display =
+            teacherToken
+                ? 'block'
+                : 'none';
+    }
+
+
+    async function changeOwnTeacherPassword() {
+        if (!teacherToken) {
+            alert('請先登入');
+            return;
+        }
+
+        const currentPassword =
+            document.getElementById(
+                'currentTeacherPassword'
+            ).value;
+
+        const newPassword =
+            document.getElementById(
+                'newTeacherPasswordSelf'
+            ).value;
+
+        const confirmPassword =
+            document.getElementById(
+                'confirmTeacherPasswordSelf'
+            ).value;
+
+        if (!currentPassword) {
+            alert('請輸入目前密碼');
+            return;
+        }
+
+        if (newPassword.length < 8) {
+            alert('新密碼至少需要 8 個字元');
+            return;
+        }
+
+        if (
+            newPassword !==
+            confirmPassword
+        ) {
+            alert('兩次輸入的新密碼不一致');
+            return;
+        }
+
+        try {
+            await apiFetch(
+                `http://${window.location.hostname}:3000/teacher/change-password`,
+                {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+
+                    body:
+                        JSON.stringify({
+                            currentPassword,
+                            newPassword
+                        })
+                }
+            );
+
+            document.getElementById(
+                'currentTeacherPassword'
+            ).value = '';
+
+            document.getElementById(
+                'newTeacherPasswordSelf'
+            ).value = '';
+
+            document.getElementById(
+                'confirmTeacherPasswordSelf'
+            ).value = '';
+
+            alert(
+                '密碼修改成功。請妥善保存新密碼。'
+            );
+
+        } catch (err) {
+            alert(
+                `修改密碼失敗：${err.message}`
+            );
+        }
+    }
+
+
+
+    function updateSystemStatusUI() {
+        const card =
+            document.getElementById(
+                'system-status-card'
+            );
+
+        if (!card) {
+            return;
+        }
+
+        const info =
+            getCurrentTeacherInfo();
+
+        const isAdmin =
+            Boolean(teacherToken) &&
+            info &&
+            info.role === 'admin';
+
+        card.style.display =
+            isAdmin
+                ? 'block'
+                : 'none';
+
+        if (isAdmin) {
+            loadSystemStatus()
+                .catch(err =>
+                    console.error(
+                        '讀取系統狀態失敗',
+                        err
+                    )
+                );
+        }
+    }
+
+
+    async function loadSystemStatus() {
+        if (!teacherToken) {
+            return;
+        }
+
+        const box =
+            document.getElementById(
+                'system-status-content'
+            );
+
+        if (!box) {
+            return;
+        }
+
+        box.textContent =
+            '讀取中';
+
+        try {
+            const data =
+                await apiFetch(
+                    `http://${window.location.hostname}:3000/teacher/system-status`
+                );
+
+            const system =
+                data.system || {};
+
+            box.innerHTML = `
+                <div><strong>API：</strong>${system.api || '未知'}</div>
+                <div><strong>教師帳號：</strong>${system.teacherCount ?? 0}
+                    （停用 ${system.inactiveTeacherCount ?? 0}）</div>
+                <div><strong>學生帳號：</strong>${system.studentCount ?? 0}
+                    （停用 ${system.inactiveStudentCount ?? 0}）</div>
+                <div><strong>班級數：</strong>${system.classCount ?? 0}</div>
+                <div><strong>學生作品：</strong>${system.projectCount ?? 0}</div>
+            `;
+
+        } catch (err) {
+            box.textContent =
+                `讀取失敗：${err.message}`;
+        }
+    }
+
+
+</script>
+
+
+<div id="teacher-project-modal">
+    <div id="teacher-project-modal-box">
+
+        <div id="teacher-project-modal-header">
+            <strong id="teacher-project-modal-title">
+                學生作品
+            </strong>
+
+            <button onclick="closeTeacherProjectModal()">
+                關閉
+            </button>
+        </div>
+
+        <div id="teacher-project-list"></div>
+
+    </div>
+</div>
+
+
+<div id="class-project-summary-modal"
+     style="
+        display:none;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,0.4);
+        z-index:99999;
+        align-items:center;
+        justify-content:center;
+     ">
+
+    <div style="
+        width:min(850px,92vw);
+        max-height:80vh;
+        overflow:auto;
+        background:white;
+        border-radius:12px;
+        padding:20px;
+    ">
+
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:15px;
+        ">
+            <strong id="class-project-summary-title">
+                班級作品總覽
+            </strong>
+
+            <div>
+                <button onclick="exportClassProjectSummaryXlsx()">
+                    匯出 Excel
+                </button>
+
+                <button onclick="exportClassProjectSummaryCsv()">
+                    匯出 CSV
+                </button>
+
+                <button onclick="closeClassProjectSummary()">
+                    關閉
+                </button>
+            </div>
+        </div>
+
+        <table style="width:100%;">
+            <thead>
+                <tr>
+                    <th>座號</th>
+                    <th>學號</th>
+                    <th>姓名</th>
+                    <th>作品數</th>
+                    <th>最新作品1</th>
+                    <th>最新作品2</th>
+                    <th>最新作品3</th>
+                    <th>最後更新</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+
+            <tbody id="class-project-summary-body">
+            </tbody>
+        </table>
+
+    </div>
+</div>
+
+
+<div
+    id="teacher-edit-modal"
+    style="
+        display:none;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,0.45);
+        z-index:9999;
+        align-items:center;
+        justify-content:center;
+    "
+>
+    <div
+        style="
+            width:430px;
+            max-width:92vw;
+            background:#fff;
+            border-radius:12px;
+            padding:22px;
+            box-shadow:0 10px 30px rgba(0,0,0,0.25);
+        "
+    >
+        <h3 style="margin-top:0;">修改教師資料</h3>
+
+        <input
+            type="hidden"
+            id="editTeacherUsername"
+        >
+
+        <div style="margin-bottom:12px;">
+            <label>教師帳號</label>
+            <input
+                id="editTeacherUsernameDisplay"
+                type="text"
+                disabled
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:10px;
+                    margin-top:6px;
+                    background:#f5f5f5;
+                "
+            >
+        </div>
+
+        <div style="margin-bottom:12px;">
+            <label>教師姓名</label>
+            <input
+                id="editTeacherName"
+                type="text"
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:10px;
+                    margin-top:6px;
+                "
+            >
+        </div>
+
+        <div style="margin-bottom:12px;">
+            <label>角色</label>
+            <select
+                id="editTeacherRole"
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:10px;
+                    margin-top:6px;
+                "
+            >
+                <option value="teacher">教師</option>
+                <option value="admin">管理者</option>
+            </select>
+        </div>
+
+        <div style="margin-bottom:12px;">
+            <label>可管理班級</label>
+            <input
+                id="editTeacherClasses"
+                type="text"
+                placeholder="例如 601,602,603"
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:10px;
+                    margin-top:6px;
+                "
+            >
+            <div
+                style="
+                    font-size:13px;
+                    color:#666;
+                    margin-top:5px;
+                "
+            >
+                管理者可填全校，教師請填指定班級。
+            </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+            <label>重設密碼</label>
+            <input
+                id="editTeacherPassword"
+                type="password"
+                placeholder="不修改密碼請留空"
+                style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:10px;
+                    margin-top:6px;
+                "
+            >
+        </div>
+
+        <label
+            style="
+                display:block;
+                margin-bottom:16px;
+                font-size:14px;
+            "
+        >
+            <input
+                type="checkbox"
+                id="showEditTeacherPassword"
+                onchange="toggleEditTeacherPassword()"
+            >
+            顯示密碼
+        </label>
+
+        <div
+            style="
+                display:flex;
+                gap:10px;
+                justify-content:flex-end;
+            "
+        >
+            <button
+                type="button"
+                onclick="closeTeacherEditModal()"
+            >
+                取消
+            </button>
+
+            <button
+                type="button"
+                onclick="submitTeacherEdit()"
+            >
+                儲存修改
+            </button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>
