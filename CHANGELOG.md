@@ -39,3 +39,25 @@
 - Reverse Proxy
 - Google Login
 - SSO
+
+## v1.1.0
+
+HTTPS 與網路安全更新。
+
+### 新增
+- 正式網域 HTTPS
+- Nginx Reverse Proxy
+- Let's Encrypt 憑證
+- IPv4 / IPv6 支援
+- 自動憑證續期
+- HTTP 自動轉 HTTPS
+
+### 安全調整
+- 前端 API 改走 `/api/`
+- API 3000 port 僅保留於 Docker 內部 network
+- 不再公開 3000/tcp
+- 憑證與私鑰排除於 Git repository
+
+### 後續規劃
+- Google Login
+- SSO

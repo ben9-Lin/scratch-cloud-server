@@ -47,3 +47,14 @@ CentOS 8 安裝時已處理：
 
 ```bash
 docker compose ps
+
+---
+
+## HTTPS 部署
+
+v1.1.0 起支援以 Nginx Reverse Proxy + Let's Encrypt 提供 HTTPS。
+
+建議使用正式網域名稱，例如：
+
+```text
+scratch.example.edu.tw
