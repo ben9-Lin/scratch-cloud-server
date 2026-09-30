@@ -103,7 +103,7 @@
         if (token) {
             try {
                 await fetch(
-                    `http://${window.location.hostname}:3000/teacher/logout`,
+                    `/api/teacher/logout`,
                     {
                         method: 'POST',
                         headers: {
@@ -261,7 +261,7 @@
         ).textContent = '教師登入中';
 
         const res = await fetch(
-            `http://${window.location.hostname}:3000/teacher/login`,
+            `/api/teacher/login`,
             {
                 method: 'POST',
                 headers: {
@@ -317,7 +317,7 @@
         await ensureTeacherLogin();
 
         const res = await fetch(
-            `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/projects/${encodeURIComponent(projectId)}/file`,
+            `/api/teacher/students/${encodeURIComponent(studentId)}/projects/${encodeURIComponent(projectId)}/file`,
             {
                 headers: {
                     'Authorization':

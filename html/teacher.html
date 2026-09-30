@@ -334,7 +334,7 @@ async function submitTeacherEdit() {
     try {
         const data =
             await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/accounts/${encodeURIComponent(username)}`,
+                `/api/teacher/accounts/${encodeURIComponent(username)}`,
                 {
                     method: 'PUT',
                     headers: {
@@ -381,7 +381,7 @@ async function toggleTeacherAccount(teacher) {
 
         try {
             await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/accounts/${encodeURIComponent(teacher.username)}`,
+                `/api/teacher/accounts/${encodeURIComponent(teacher.username)}`,
                 {
                     method: 'PUT',
 
@@ -674,6 +674,41 @@ async function toggleTeacherAccount(teacher) {
             placeholder="新密碼"
         >
 
+            <div style="margin-top:12px;">
+                <input
+                    id="studentGoogleEmail"
+                    type="email"
+                    placeholder="Google 帳號，例如 student@school.edu.tw"
+                    style="width:320px;"
+                >
+
+                <button
+                    type="button"
+                    onclick="loadStudentGoogleBinding()"
+                >
+                    讀取 Google 綁定
+                </button>
+
+                <button
+                    type="button"
+                    onclick="clearStudentGoogleBinding()"
+                >
+                    解除綁定
+                </button>
+            </div>
+
+            <div
+                id="studentGoogleStatus"
+                style="
+                    margin-top:6px;
+                    font-size:13px;
+                    color:#666;
+                "
+            >
+                尚未讀取 Google 綁定狀態
+            </div>
+
+
         <button onclick="saveStudent()">
             儲存學生
         </button>
@@ -845,7 +880,7 @@ async function toggleTeacherAccount(teacher) {
             id="sitePrefixInput"
             type="text"
             maxlength="30"
-            placeholder="例如：範例國小"
+            placeholder="例如：大光國小"
             style="min-width:220px;"
         >
 
@@ -987,7 +1022,7 @@ async function toggleTeacherAccount(teacher) {
                 }
 
                 const loginRes = await fetch(
-                    `http://${window.location.hostname}:3000/teacher/login`,
+                    `/api/teacher/login`,
                     {
                         method: 'POST',
                         headers: {
@@ -1056,7 +1091,7 @@ async function toggleTeacherAccount(teacher) {
             }
 
             const data = await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/students`
+                `/api/teacher/students`
             );
 
             document.getElementById(
@@ -1234,7 +1269,129 @@ function renderStudents(students) {
     }
 
 
-    async function saveStudent() {
+    
+async function loadStudentGoogleBinding() {
+    const studentId =
+        document.getElementById(
+            'studentId'
+        ).value.trim();
+
+    const status =
+        document.getElementById(
+            'studentGoogleStatus'
+        );
+
+    if (!studentId) {
+        status.textContent =
+            '請先選擇或輸入學生帳號';
+        return;
+    }
+
+    try {
+        const data =
+            await apiFetch(
+                `/api/teacher/students/${encodeURIComponent(studentId)}/google`
+            );
+
+        document.getElementById(
+            'studentGoogleEmail'
+        ).value =
+            data.googleEmail || '';
+
+        if (data.googleVerified) {
+            status.textContent =
+                ' Google 帳號已綁定並完成登入驗證';
+        } else if (data.linked) {
+            status.textContent =
+                'Google Email 已設定，等待學生第一次 Google 登入';
+        } else {
+            status.textContent =
+                '尚未綁定 Google 帳號';
+        }
+
+    } catch (err) {
+        status.textContent =
+            `讀取失敗：${err.message}`;
+    }
+}
+
+
+async function saveStudentGoogleBinding(
+    studentId
+) {
+    const googleEmail =
+        document.getElementById(
+            'studentGoogleEmail'
+        ).value.trim();
+
+    return await apiFetch(
+        `/api/teacher/students/${encodeURIComponent(studentId)}/google`,
+        {
+            method: 'PUT',
+            headers: {
+                'Content-Type':
+                    'application/json'
+            },
+            body: JSON.stringify({
+                googleEmail
+            })
+        }
+    );
+}
+
+
+async function clearStudentGoogleBinding() {
+    const studentId =
+        document.getElementById(
+            'studentId'
+        ).value.trim();
+
+    if (!studentId) {
+        alert('請先選擇學生');
+        return;
+    }
+
+    const ok = confirm(
+        `確定解除學生【${studentId}】的 Google 帳號綁定嗎？`
+    );
+
+    if (!ok) {
+        return;
+    }
+
+    try {
+        await apiFetch(
+            `/api/teacher/students/${encodeURIComponent(studentId)}/google`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Content-Type':
+                        'application/json'
+                },
+                body: JSON.stringify({
+                    googleEmail: ''
+                })
+            }
+        );
+
+        document.getElementById(
+            'studentGoogleEmail'
+        ).value = '';
+
+        document.getElementById(
+            'studentGoogleStatus'
+        ).textContent =
+            'Google 帳號綁定已解除';
+
+    } catch (err) {
+        alert(
+            `解除 Google 綁定失敗：${err.message}`
+        );
+    }
+}
+
+
+async function saveStudent() {
         if (!teacherToken) {
             alert('請先輸入教師管理密碼並登入');
             return;
@@ -1272,7 +1429,7 @@ function renderStudents(students) {
 
         try {
             const data = await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/students`,
+                `/api/teacher/students`,
                 {
                     method: 'POST',
 
@@ -1299,7 +1456,13 @@ function renderStudents(students) {
                 'studentPassword'
             ).value = '';
 
+            await saveStudentGoogleBinding(
+                data.student.studentId
+            );
+
             await loadStudents();
+
+            await loadStudentGoogleBinding();
 
         } catch (err) {
             alert(
@@ -1314,7 +1477,7 @@ function renderStudents(students) {
         try {
             if (token) {
                 await fetch(
-                    `http://${window.location.hostname}:3000/teacher/logout`,
+                    `/api/teacher/logout`,
                     {
                         method: 'POST',
                         headers: {
@@ -1478,7 +1641,7 @@ async function setStudentActive(studentId, active) {
 
         try {
             const data = await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/active`,
+                `/api/teacher/students/${encodeURIComponent(studentId)}/active`,
                 {
                     method: 'POST',
                     headers: {
@@ -1574,7 +1737,7 @@ async function setStudentActive(studentId, active) {
 
         try {
             const url =
-                `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/projects`;
+                `/api/teacher/students/${encodeURIComponent(studentId)}/projects`;
 
             console.log(
                 '[TEACHER] 讀取學生作品',
@@ -1761,7 +1924,7 @@ async function setStudentActive(studentId, active) {
 
         try {
             const res = await fetch(
-                `http://${window.location.hostname}:3000/teacher/students/${encodeURIComponent(studentId)}/projects/${encodeURIComponent(projectId)}/file`,
+                `/api/teacher/students/${encodeURIComponent(studentId)}/projects/${encodeURIComponent(projectId)}/file`,
                 {
                     headers: {
                         'Authorization':
@@ -2013,7 +2176,7 @@ async function setStudentActive(studentId, active) {
 
             const data =
                 await apiFetch(
-                    `http://${window.location.hostname}:3000/teacher/students/import`,
+                    `/api/teacher/students/import`,
                     {
                         method: 'POST',
                         headers: {
@@ -2103,8 +2266,8 @@ async function setStudentActive(studentId, active) {
         const text =
             '\uFEFF' +
             'studentId,name,className,seatNo,password\n' +
-            'TEST001,測試學生甲,TEST601,01,DemoPass01\n' +
-            'TEST002,測試學生乙,TEST601,02,DemoPass02\n';
+            '10501,王小明,105,01,1234\n' +
+            '10502,李小華,105,02,1234\n';
 
         const blob =
             new Blob(
@@ -2228,7 +2391,7 @@ async function refreshCurrentTeacherInfo() {
     }
 
     const data = await apiFetch(
-        `http://${window.location.hostname}:3000/teacher/me`
+        `/api/teacher/me`
     );
 
     if (
@@ -2482,7 +2645,7 @@ function generateClassCsv() {
 
         try {
             const data = await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/classes/create`,
+                `/api/teacher/classes/create`,
                 {
                     method: 'POST',
                     headers: {
@@ -2540,7 +2703,7 @@ function generateClassCsv() {
 
         try {
             const data = await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/reset-passwords`,
+                `/api/teacher/classes/${encodeURIComponent(className)}/reset-passwords`,
                 {
                     method: 'POST'
                 }
@@ -2588,7 +2751,7 @@ function generateClassCsv() {
 
         try {
             const data = await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/active`,
+                `/api/teacher/classes/${encodeURIComponent(className)}/active`,
                 {
                     method: 'POST',
                     headers: {
@@ -2641,7 +2804,7 @@ function generateClassCsv() {
 
         try {
             const data = await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/projects-summary`
+                `/api/teacher/classes/${encodeURIComponent(className)}/projects-summary`
             );
 
             currentClassProjectSummary = data;
@@ -2880,7 +3043,7 @@ function generateClassCsv() {
 
         try {
             const res = await fetch(
-                `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/projects.xlsx`,
+                `/api/teacher/classes/${encodeURIComponent(className)}/projects.xlsx`,
                 {
                     headers: {
                         'Authorization':
@@ -3000,7 +3163,7 @@ function generateClassCsv() {
 
         const data =
             await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/accounts`
+                `/api/teacher/accounts`
             );
 
         const tbody =
@@ -3200,7 +3363,7 @@ const values = [
         try {
             const data =
                 await apiFetch(
-                    `http://${window.location.hostname}:3000/teacher/accounts`,
+                    `/api/teacher/accounts`,
                     {
                         method: 'POST',
 
@@ -3310,7 +3473,7 @@ const values = [
 
         const data =
             await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/classes`
+                `/api/teacher/classes`
             );
 
         const tbody =
@@ -3481,7 +3644,7 @@ const values = [
         try {
             const data =
                 await apiFetch(
-                    `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}`,
+                    `/api/teacher/classes/${encodeURIComponent(className)}`,
                     {
                         method: 'DELETE',
 
@@ -3559,7 +3722,7 @@ const values = [
 
         const data =
             await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/deleted-classes`
+                `/api/teacher/deleted-classes`
             );
 
         const tbody =
@@ -3652,7 +3815,7 @@ const values = [
         try {
             const data =
                 await apiFetch(
-                    `http://${window.location.hostname}:3000/teacher/deleted-classes/${encodeURIComponent(folderName)}/restore`,
+                    `/api/teacher/deleted-classes/${encodeURIComponent(folderName)}/restore`,
                     {
                         method: 'POST',
                         headers: {
@@ -3718,7 +3881,7 @@ const values = [
 
     async function loadSiteSettingsAdmin() {
         const res = await fetch(
-            `http://${window.location.hostname}:3000/settings`
+            `/api/settings`
         );
 
         const data =
@@ -3783,7 +3946,7 @@ const values = [
         try {
             const data =
                 await apiFetch(
-                    `http://${window.location.hostname}:3000/teacher/settings`,
+                    `/api/teacher/settings`,
                     {
                         method: 'PUT',
 
@@ -3876,7 +4039,7 @@ const values = [
         try {
             const data =
                 await apiFetch(
-                    `http://${window.location.hostname}:3000/teacher/classes/${encodeURIComponent(className)}/active`,
+                    `/api/teacher/classes/${encodeURIComponent(className)}/active`,
                     {
                         method: 'POST',
 
@@ -3967,7 +4130,7 @@ const values = [
 
         try {
             await apiFetch(
-                `http://${window.location.hostname}:3000/teacher/change-password`,
+                `/api/teacher/change-password`,
                 {
                     method: 'POST',
 
@@ -4064,7 +4227,7 @@ const values = [
         try {
             const data =
                 await apiFetch(
-                    `http://${window.location.hostname}:3000/teacher/system-status`
+                    `/api/teacher/system-status`
                 );
 
             const system =

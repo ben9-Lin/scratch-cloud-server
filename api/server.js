@@ -266,6 +266,9 @@ function requireAuth(req, res, next) {
 }
 
 const multer = require('multer')
+const { OAuth2Client } = require('google-auth-library');
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 const app = express();
 const PORT = 3000;
@@ -1071,6 +1074,214 @@ app.post(
             return res.status(500).json({
                 status: 'error',
                 message: '修改密碼失敗'
+            });
+        }
+    }
+);
+
+
+
+// ==============================
+// Google 登入
+// 只允許已綁定的學生帳號
+// ==============================
+app.post(
+    '/auth/google',
+    express.json(),
+    async (req, res) => {
+        try {
+            if (!GOOGLE_CLIENT_ID) {
+                return res.status(500).json({
+                    status: 'error',
+                    message: 'Google Login 尚未設定'
+                });
+            }
+
+            const credential =
+                (req.body.credential || '')
+                    .toString()
+                    .trim();
+
+            if (!credential) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: '缺少 Google credential'
+                });
+            }
+
+            const ticket =
+                await googleClient.verifyIdToken({
+                    idToken: credential,
+                    audience: GOOGLE_CLIENT_ID
+                });
+
+            const payload =
+                ticket.getPayload();
+
+            if (!payload) {
+                return res.status(401).json({
+                    status: 'error',
+                    message: 'Google 驗證失敗'
+                });
+            }
+
+            const googleSub =
+                (payload.sub || '')
+                    .toString()
+                    .trim();
+
+            const googleEmail =
+                (payload.email || '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+
+            const emailVerified =
+                payload.email_verified === true;
+
+            if (
+                !googleSub ||
+                !googleEmail ||
+                !emailVerified
+            ) {
+                return res.status(401).json({
+                    status: 'error',
+                    message: 'Google 帳號驗證資料不完整'
+                });
+            }
+
+            const studentsFile =
+                path.join(
+                    __dirname,
+                    'students.json'
+                );
+
+            const students =
+                JSON.parse(
+                    fs.readFileSync(
+                        studentsFile,
+                        'utf8'
+                    )
+                );
+
+            const student =
+                students.find(item => {
+                    if (!item) {
+                        return false;
+                    }
+
+                    const boundSub =
+                        (item.googleSub || '')
+                            .toString()
+                            .trim();
+
+                    const boundEmail =
+                        (item.googleEmail || '')
+                            .toString()
+                            .trim()
+                            .toLowerCase();
+
+                    return (
+                        boundSub === googleSub ||
+                        (
+                            boundEmail &&
+                            boundEmail === googleEmail
+                        )
+                    );
+                });
+
+            if (!student) {
+                return res.status(403).json({
+                    status: 'error',
+                    code: 'GOOGLE_NOT_LINKED',
+                    message:
+                        '此 Google 帳號尚未綁定平台帳號'
+                });
+            }
+
+            if (student.active === false) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: '此帳號目前已停用，請洽老師'
+                });
+            }
+
+            // 第一次以 Email 對上時，
+            // 自動記錄穩定的 Google sub。
+            let changed = false;
+
+            if (
+                !student.googleSub &&
+                googleSub
+            ) {
+                student.googleSub =
+                    googleSub;
+
+                changed = true;
+            }
+
+            if (
+                !student.googleEmail &&
+                googleEmail
+            ) {
+                student.googleEmail =
+                    googleEmail;
+
+                changed = true;
+            }
+
+            if (changed) {
+                fs.writeFileSync(
+                    studentsFile,
+                    JSON.stringify(
+                        students,
+                        null,
+                        2
+                    ),
+                    'utf8'
+                );
+            }
+
+            const token =
+                crypto.randomUUID();
+
+            sessions.set(token, {
+                studentId:
+                    student.studentId,
+                name:
+                    student.name || '',
+                createdAt:
+                    Date.now(),
+                loginMethod:
+                    'google',
+                googleSub
+            });
+
+            return res.json({
+                status: 'ok',
+                token,
+                loginMethod: 'google',
+                student: {
+                    studentId:
+                        student.studentId,
+                    name:
+                        student.name || '',
+                    className:
+                        student.className || '',
+                    seatNo:
+                        student.seatNo || ''
+                }
+            });
+
+        } catch (error) {
+            console.error(
+                '[AUTH] Google login error',
+                error
+            );
+
+            return res.status(401).json({
+                status: 'error',
+                message: 'Google 登入驗證失敗'
             });
         }
     }
@@ -4366,6 +4577,238 @@ app.get('/projects/:id/download', (req, res) => {
     });
   }
 });
+
+
+
+// ==============================
+// 教師設定學生 Google 帳號綁定
+// ==============================
+
+// 讀取學生 Google 帳號綁定
+app.get(
+    '/teacher/students/:studentId/google',
+    requireTeacher,
+    async (req, res) => {
+        try {
+            const studentId =
+                (req.params.studentId || '')
+                    .toString()
+                    .trim();
+
+            const studentsFile =
+                path.join(
+                    __dirname,
+                    'students.json'
+                );
+
+            const students =
+                JSON.parse(
+                    fs.readFileSync(
+                        studentsFile,
+                        'utf8'
+                    )
+                );
+
+            const student =
+                students.find(
+                    item =>
+                        item.studentId === studentId
+                );
+
+            if (!student) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: '找不到學生帳號'
+                });
+            }
+
+            if (
+                !canManageClass(
+                    req.teacher,
+                    student.className
+                )
+            ) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: '沒有權限管理此學生'
+                });
+            }
+
+            return res.json({
+                status: 'ok',
+                studentId:
+                    student.studentId,
+                googleEmail:
+                    student.googleEmail || '',
+                linked:
+                    Boolean(
+                        student.googleEmail
+                    ),
+                googleVerified:
+                    Boolean(
+                        student.googleSub
+                    )
+            });
+
+        } catch (error) {
+            console.error(
+                '[TEACHER] Google binding read error',
+                error
+            );
+
+            return res.status(500).json({
+                status: 'error',
+                message: '讀取 Google 綁定失敗'
+            });
+        }
+    }
+);
+
+
+app.put(
+    '/teacher/students/:studentId/google',
+    requireTeacher,
+    express.json(),
+    async (req, res) => {
+        try {
+            const studentId =
+                (req.params.studentId || '')
+                    .toString()
+                    .trim();
+
+            const googleEmail =
+                (req.body.googleEmail || '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+
+            if (!studentId) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: '缺少學生帳號'
+                });
+            }
+
+            if (
+                googleEmail &&
+                !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                    googleEmail
+                )
+            ) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Google Email 格式不正確'
+                });
+            }
+
+            const studentsFile =
+                path.join(
+                    __dirname,
+                    'students.json'
+                );
+
+            const students =
+                JSON.parse(
+                    fs.readFileSync(
+                        studentsFile,
+                        'utf8'
+                    )
+                );
+
+            const student =
+                students.find(
+                    item =>
+                        item.studentId === studentId
+                );
+
+            if (!student) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: '找不到學生帳號'
+                });
+            }
+
+            if (
+                !canManageClass(
+                    req.teacher,
+                    student.className
+                )
+            ) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: '沒有權限管理此學生'
+                });
+            }
+
+            if (googleEmail) {
+                const duplicate =
+                    students.find(item =>
+                        item.studentId !== studentId &&
+                        (item.googleEmail || '')
+                            .toString()
+                            .trim()
+                            .toLowerCase() ===
+                            googleEmail
+                    );
+
+                if (duplicate) {
+                    return res.status(409).json({
+                        status: 'error',
+                        message:
+                            `此 Google Email 已綁定學生 ${duplicate.studentId}`
+                    });
+                }
+            }
+
+            const oldEmail =
+                (student.googleEmail || '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+
+            student.googleEmail =
+                googleEmail;
+
+            // Email 改變或解除綁定時，
+            // 清除舊 Google sub，
+            // 下一次 Google 登入重新建立。
+            if (oldEmail !== googleEmail) {
+                student.googleSub = '';
+            }
+
+            fs.writeFileSync(
+                studentsFile,
+                JSON.stringify(
+                    students,
+                    null,
+                    2
+                ),
+                'utf8'
+            );
+
+            return res.json({
+                status: 'ok',
+                studentId:
+                    student.studentId,
+                googleEmail:
+                    student.googleEmail || '',
+                linked:
+                    Boolean(student.googleEmail)
+            });
+
+        } catch (error) {
+            console.error(
+                '[TEACHER] Google binding error',
+                error
+            );
+
+            return res.status(500).json({
+                status: 'error',
+                message: 'Google 帳號綁定失敗'
+            });
+        }
+    }
+);
 
 
 app.listen(PORT, '0.0.0.0', () => {
