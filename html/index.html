@@ -97,6 +97,13 @@
         }
 
 </style>
+
+<script
+    src="https://accounts.google.com/gsi/client"
+    async
+    defer
+></script>
+
 </head>
 <body style="margin:0; padding:0; overflow:hidden;">
 
@@ -113,6 +120,17 @@
             <button id="loginButton" onclick="loginUser()">登入</button>
             <button id="logoutButton" onclick="logoutUser()" style="display:none;">登出</button>
             <span id="login-status" style="margin-left:10px; color:#cce5ff;">(尚未登入)</span>
+
+        <div
+            id="google-signin-area"
+            style="
+                display:inline-block;
+                margin-left:12px;
+                vertical-align:middle;
+            "
+        >
+            <div id="google-signin-button"></div>
+        </div>
         <button
             id="changePasswordButton"
             type="button"
@@ -158,6 +176,169 @@
     <script>
     let currentStudent = '';
     let currentToken = '';
+
+    const GOOGLE_CLIENT_ID =
+        '523864494781-to69fphr1ae35acecktlo4053eirco1q.apps.googleusercontent.com';
+
+    function initGoogleSignIn() {
+        if (
+            !window.google ||
+            !google.accounts ||
+            !google.accounts.id
+        ) {
+            console.warn(
+                '[GOOGLE] GIS 尚未載入'
+            );
+            return;
+        }
+
+        google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback:
+                handleGoogleCredentialResponse,
+            auto_select: false
+        });
+
+        const container =
+            document.getElementById(
+                'google-signin-button'
+            );
+
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = '';
+
+        google.accounts.id.renderButton(
+            container,
+            {
+                type: 'standard',
+                theme: 'outline',
+                size: 'large',
+                text: 'signin_with',
+                shape: 'rectangular',
+                logo_alignment: 'left',
+                width: 250
+            }
+        );
+    }
+
+
+    async function handleGoogleCredentialResponse(
+        response
+    ) {
+        if (
+            !response ||
+            !response.credential
+        ) {
+            alert('沒有收到 Google 登入資料');
+            return;
+        }
+
+        try {
+            const res = await fetch(
+                `/api/auth/google`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+                    body: JSON.stringify({
+                        credential:
+                            response.credential
+                    })
+                }
+            );
+
+            const data =
+                await readApiJson(res);
+
+            if (
+                !res.ok ||
+                data.status !== 'ok'
+            ) {
+                throw new Error(
+                    data.message ||
+                    `HTTP ${res.status}`
+                );
+            }
+
+            currentToken =
+                data.token;
+
+            currentStudent =
+                data.student.studentId;
+
+            localStorage.setItem(
+                'studentToken',
+                currentToken
+            );
+
+            localStorage.setItem(
+                'currentStudent',
+                JSON.stringify(
+                    data.student
+                )
+            );
+
+            resetCloudSaveStatus();
+
+            updateLoginButtons(true);
+
+            const status =
+                document.getElementById(
+                    'login-status'
+                );
+
+            if (status) {
+                status.textContent =
+                    `已登入：${data.student.studentId} ${data.student.name || ''}（Google）`;
+            }
+
+            alert(
+                `Google 登入成功：${data.student.name || data.student.studentId}`
+            );
+
+        } catch (err) {
+            alert(
+                `Google 登入失敗：${err.message}`
+            );
+        }
+    }
+
+
+    window.addEventListener(
+        'load',
+        () => {
+            let tries = 0;
+
+            const timer = setInterval(
+                () => {
+                    tries += 1;
+
+                    if (
+                        window.google &&
+                        google.accounts &&
+                        google.accounts.id
+                    ) {
+                        clearInterval(timer);
+                        initGoogleSignIn();
+                    }
+
+                    if (tries >= 20) {
+                        clearInterval(timer);
+                        console.warn(
+                            '[GOOGLE] GIS 載入逾時'
+                        );
+                    }
+                },
+                250
+            );
+        }
+    );
+
 
     
     function changeStudentPassword() {
@@ -275,7 +456,7 @@
 
         try {
             const res = await fetch(
-                `http://${window.location.hostname}:3000/auth/change-password`,
+                `/api/auth/change-password`,
                 {
                     method: 'POST',
                     headers: {
@@ -413,7 +594,7 @@
 
         try {
             const res = await fetch(
-                `http://${window.location.hostname}:3000/auth/login`,
+                `/api/auth/login`,
                 {
                     method: 'POST',
                     headers: {
@@ -517,7 +698,7 @@ formData.append('name', projName);
 
             // 先查詢目前學生是否已有同名作品
             const findRes = await fetch(
-                `http://${window.location.hostname}:3000/projects/name/find?name=${encodeURIComponent(projName)}`,
+                `/api/projects/name/find?name=${encodeURIComponent(projName)}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${currentToken}`
@@ -534,7 +715,7 @@ formData.append('name', projName);
             }
 
             let saveUrl =
-                `http://${window.location.hostname}:3000/projects/upload`;
+                `/api/projects/upload`;
 
             let finalName = projName;
 
@@ -548,7 +729,7 @@ formData.append('name', projName);
 
                 if (action === 'overwrite') {
                     saveUrl =
-                        `http://${window.location.hostname}:3000/projects/overwrite/${findData.project.id}`;
+                        `/api/projects/overwrite/${findData.project.id}`;
                 }
 
                 if (action === 'new') {
@@ -641,7 +822,7 @@ alert(
 
         try {
             const res = await fetch(
-                `http://${window.location.hostname}:3000/projects/list/all`,
+                `/api/projects/list/all`,
                 {
                     headers: {
                         'Authorization': `Bearer ${currentToken}`
@@ -686,7 +867,7 @@ alert(
             }
 
             const res = await fetch(
-                `http://${window.location.hostname}:3000/projects/file/${projectId}`,
+                `/api/projects/file/${projectId}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${currentToken}`
@@ -801,7 +982,7 @@ alert(
 
         try {
             const res = await fetch(
-                `http://${window.location.hostname}:3000/projects/file/${projectId}`,
+                `/api/projects/file/${projectId}`,
                 {
                     method: 'DELETE',
                     headers: {
@@ -918,7 +1099,7 @@ alert(
         try {
             if (tokenToLogout) {
                 await fetch(
-                    `http://${window.location.hostname}:3000/auth/logout`,
+                    `/api/auth/logout`,
                     {
                         method: 'POST',
                         headers: {
@@ -988,7 +1169,7 @@ alert(
 
         try {
             const res = await fetch(
-                `http://${window.location.hostname}:3000/auth/me`,
+                `/api/auth/me`,
                 {
                     headers: {
                         'Authorization': `Bearer ${currentToken}`
@@ -1053,7 +1234,7 @@ alert(
 async function loadSiteSettings() {
     try {
         const res = await fetch(
-            `http://${window.location.hostname}:3000/settings`
+            `/api/settings`
         );
 
         const data =
