@@ -61,3 +61,26 @@ HTTPS 與網路安全更新。
 ### 後續規劃
 - Google Login
 - SSO
+
+## v1.2.0
+
+Google Login 與雙軌登入版本。
+
+### 新增
+- Google Identity Services 登入
+- Google ID Token 後端驗證
+- Google 帳號與既有學生帳號綁定
+- 教師後台設定學生 Google Email
+- Google Email 唯一綁定檢查
+- 第一次 Google 登入後記錄 Google sub
+- 保留原本學號／密碼登入
+
+### 架構調整
+- 前端 API 統一使用 `/api/`
+- Ubuntu HTTP 開發環境與正式 HTTPS 環境共用同一套前端
+- `google-auth-library` 正式加入 API dependencies
+
+### 安全原則
+- 未綁定的 Google 帳號不能直接建立學生身份
+- Google 登入仍需對應既有學生帳號
+- 管理者與教師原本帳密登入保留
