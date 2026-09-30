@@ -34,3 +34,6 @@ html/official/
 Thumbs.db
 .vscode/
 .idea/
+
+# Runtime-generated Nginx config
+nginx/default.conf
