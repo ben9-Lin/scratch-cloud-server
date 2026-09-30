@@ -1,0 +1,6 @@
+services:
+  scratch-web:
+    ports:
+      - "443:443"
+    volumes:
+      - ./letsencrypt:/etc/letsencrypt:ro,Z
